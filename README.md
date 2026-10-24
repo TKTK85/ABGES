@@ -2,7 +2,7 @@
 
 ABGES V1.0 将表型、系谱和基因型质控、模型规划、遗传评估、结果验证和报告生成组织为一套可配置、可追溯的流程。项目通过 Harness 统一入口调用阶段执行器，由 HIBLUP 完成遗传评估，PLINK 2 用于基因型处理。
 
-仓库包含源代码、通用配置、任务模板、测试和文档，**不提供真实育种数据、历史评估结果或凭据**。Windows 64 位 PLINK 2 已随包分发，版本、许可证和对应源码见 [PLINK 分发说明](tools/PLINK/README.md)；使用者需要在本机准备数据与 HIBLUP 引擎。配置和测试通过不能替代真实数据上的收敛检查及结果验证。
+仓库包含源代码、通用配置、任务模板、测试和文档，**不提供真实育种数据、历史评估结果或凭据**。计算引擎已随包分发：Windows 64 位 PLINK 2 和 HIBLUP 的版本、许可证与对应源码说明见 [PLINK 分发说明](tools/PLINK/README.md) 与 [HIBLUP 分发说明](tools/HIBLUP/README.md)；使用者只需在本机准备自己的育种数据。配置和测试通过不能替代真实数据上的收敛检查及结果验证。
 
 ## 功能与适用范围
 
@@ -41,16 +41,9 @@ python -m venv .venv
 
 最后一步检查 Python 和依赖是否可用。未加 `--require-engines` 时，引擎缺失不会使该检查失败；这不表示已经具备真实评估条件。`requirements-dev.lock` 包含运行与测试依赖，运行环境的单独锁文件为 `requirements.lock`。
 
-### 2. 配置并检查本地引擎
+### 2. 检查随包计算引擎
 
-仓库已包含 `tools/PLINK/plink2.exe`（Windows 64 位，v2.0.0-a.7.1）。按 HIBLUP 提供方的许可和安装说明准备以下文件：
-
-```text
-tools/HIBLUP/hiblup.exe
-tools/HIBLUP/libiomp5md.dll
-tools/HIBLUP/vcruntime140.dll
-tools/HIBLUP/vcruntime140_1.dll
-```
+Windows 64 位 PLINK 2（`tools/PLINK/plink2.exe`，v2.0.0-a.7.1）与 HIBLUP（`tools/HIBLUP/hiblup.exe` v1.7.0 及其运行库 DLL）均已随仓库分发，克隆后即可使用，无需另行下载或手动放置文件；版本、SHA-256 与许可信息见 [PLINK 分发说明](tools/PLINK/README.md) 和 [HIBLUP 分发说明](tools/HIBLUP/README.md)。
 
 执行完整部署检查：
 
@@ -60,7 +53,7 @@ tools/HIBLUP/vcruntime140_1.dll
 
 [引擎清单](tools/ENGINE_MANIFEST.json) 记录了版本、必要文件和 SHA-256；检查还包括 Windows PowerShell。该命令检查清单中的全部引擎，即使本次只做 PBLUP。哈希不符时，应核验二进制来源和版本，并经审查更新清单，不能通过关闭校验放行。
 
-已有全部引擎时，也可以使用 `scripts/bootstrap_abges_venv.ps1` 创建环境；该脚本会安装锁定依赖并立即执行上述完整引擎检查。
+也可以使用 `scripts/bootstrap_abges_venv.ps1` 一步创建环境；该脚本会安装锁定依赖并立即执行上述完整引擎检查。
 
 ### 3. 准备数据和任务 YAML
 
