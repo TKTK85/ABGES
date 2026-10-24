@@ -1,0 +1,7 @@
+interface:
+  display_name: "ABGES Genetic Evaluation"
+  short_description: "Auditable poultry breeding evaluation and reporting workflow"
+  default_prompt: "Use $auto-breed-geneval to validate my ABGES inputs and prepare a safe genetic-evaluation run."
+
+policy:
+  allow_implicit_invocation: false

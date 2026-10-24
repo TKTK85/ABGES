@@ -1,0 +1,51 @@
+version: "1.0"
+profile: standard_breeding_evaluation
+
+# 对外交付物；运行 JSON、checkpoint、日志和中间矩阵始终留在 _runs 内部审计目录。
+deliverables:
+  required: [markdown, xlsx, docx, engine_outputs]
+  optional: []
+  forbidden_as_delivery: [json, checkpoint, pickle, intermediate]
+
+layout:
+  task_root:
+    - input
+    - output
+    - reports
+    - _runs
+  run_directories:
+    - input
+    - output
+    - reports
+    - context
+    - metadata
+    - statistics
+    - intermediate
+  internal_only:
+    - "_runs/**/context/**"
+    - "_runs/**/metadata/**"
+    - "_runs/**/statistics/**"
+    - "_runs/**/intermediate/**"
+    - "_runs/**/checkpoint*"
+    - "_runs/**/ABGES diagnostic logs"
+    - "_runs/**/*.json"
+    - "_runs/**/*.jsonl"
+    - "_runs/**/*.pkl"
+  reports:
+    - "*_报告.docx"
+    - "*_育种值交付.xlsx"
+    - "*_育种值摘要.md"
+    - "figures/*"
+  engine_outputs:
+    - "output/*.vars"
+    - "output/*.rand"
+    - "output/*.beta"
+    - "output/*.anova"
+    - "output/*.log"
+
+semantics:
+  raw_ebv: "保留引擎原始尺度，不因参考群配置而覆盖"
+  reference_ebv: "仅当任务显式提供 reference_column 和 reference_value 时计算；原始 EBV 同时保留"
+  generation_summary: "世代均值差异是描述统计；只有 generation_semantics=genetic_generation 才称为遗传趋势"
+  selection_analysis: "仅是假设情景，不形成候选名单、配种方案或实际决策"
+  reliability: "优先使用 HIBLUP PA_R2；无 PA_R2 时使用 1-PEV/VA，并记录来源"

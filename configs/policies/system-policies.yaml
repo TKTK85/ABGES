@@ -1,0 +1,264 @@
+# ABGES 系统策略
+# 作用：全局运行约束的唯一权威来源，由 harness/policy-engine 强制执行
+# 版本：1.0.0
+
+meta:
+  config_id: system-policies
+  version: "1.1.0"
+  updated: "2026-10-22"
+  owner: harness/policy-engine
+
+# ---------------------------------------------------------------
+# 一、执行边界（铁律一：唯一执行边界）
+# ---------------------------------------------------------------
+execution_boundary:
+  single_entry: true
+  entrypoint: harness/entrypoint/main.py
+  # 所有外部调用必须经由 tool-executor，禁止 Agent 直接 subprocess
+  forbid_direct_subprocess: true
+  allowed_external_binaries:
+    - tools/HIBLUP/hiblup.exe
+    - tools/PLINK/plink2.exe
+    # 【P2-1 纳入执行边界】Word 目录域回写原先绕过 tool-executor 直接
+    # subprocess 拉起 powershell，违反铁律一。现统一登记并由
+    # ToolExecutor.run_binary 走白名单校验 + SHA256 校验 + audit.tool_call。
+    - powershell.exe
+  # 命令白名单外的调用一律拒绝并记录
+  on_unlisted_binary: reject_and_audit
+
+# ---------------------------------------------------------------
+# 二、人机双通道（铁律二）
+# ---------------------------------------------------------------
+interface:
+  commands:
+    - name: validate
+      desc: 只读校验，不产生分析结果，用于上机前自查
+      mutates_state: false
+    - name: run
+      desc: 执行完整流程并产出结果
+      mutates_state: true
+    - name: status
+      desc: 查询指定 run_id 的进度与状态
+      mutates_state: false
+  # 机器通道：所有命令支持 --json，输出结构化结果供上游解析
+  json_flag: "--json"
+  human_output: 中文自然语言摘要，含结论、关键指标、告警与文件清单
+  machine_output: 严格符合 schemas/result-schema.yaml
+
+# ---------------------------------------------------------------
+# 三、数据只读（铁律三）
+# ---------------------------------------------------------------
+data_protection:
+  raw_data_readonly: true
+  raw_data_dir: workspace/input/raw
+  # 读入即记录校验和，交付前复核，不一致即判定违规
+  checksum_on_read: true
+  checksum_algorithm: md5
+  verify_before_delivery: true
+  forbid_inplace_write: true
+  # 任何"修改"一律另存新文件
+  modification_policy: copy_then_modify
+
+# ---------------------------------------------------------------
+# 四、输出时间戳化（铁律四：永不覆盖）
+# ---------------------------------------------------------------
+output_policy:
+  # Universal delivery layout: workspace/{task_name}/{input,output,reports,_runs}.
+  # Task YAML output_dir is normalized to the stable task root.
+  task_directory_layout: true
+  timestamp_format: "%Y%m%d_%H%M%S"
+  naming_template: "{task}_{trait}_{model}_{timestamp}"
+  never_overwrite: true
+  on_name_collision: append_suffix    # 追加 _2, _3，绝不覆盖
+  directories:
+    runs: workspace/{task_id}
+    output: workspace/output
+    intermediate: workspace/{task_id}/intermediate
+    logs: workspace/logs
+    statistics: workspace/statistics
+    change_logs: workspace/change_logs
+  # 每次运行独立目录
+  run_dir_template: "workspace/{task_id}"
+  # 对外交付目录固定包含 input/output/reports 中按白名单筛选的正式文件；
+  # 内部运行目录保留 state、元数据、日志和 QC 审计。成功交付后仅清除
+  # 已结束 run 的大体积黑板检查点；当前任务旧 run 按明确保留策略清理。
+  run_retention:
+    keep_active_runs: 1
+    cleanup_old_runs: true
+    cleanup_resume_checkpoints_after_delivery: true
+    cleanup_run_scratch_after_delivery: true
+
+# ---------------------------------------------------------------
+# 五、运行元数据（铁律五）
+# ---------------------------------------------------------------
+metadata:
+  required: true
+  filename: "{prefix}_metadata.json"
+  must_contain:
+    - run_id
+    - timestamp_start
+    - timestamp_end
+    - duration_seconds
+    - abges_version
+    - engine_name
+    - engine_version
+    - full_command_line        # 完整可复现的命令行
+    - input_files              # 路径 + 校验和 + 行列数
+    - output_files             # 路径 + 大小
+    - config_snapshot          # 本次生效的关键参数
+    - model_id
+    - trait
+    - fixed_effects
+    - covariates
+    - status
+    - warnings
+    - errors
+  reproducibility: 元数据中的命令行必须可原样复制执行并得到相同结果
+
+# ---------------------------------------------------------------
+# 六、处理前后统计（铁律六）
+# ---------------------------------------------------------------
+statistics_policy:
+  mandatory: true
+  filename: "{prefix}_statistics.json"
+  # 任何删改数据的步骤都必须记录前后对照
+  require_before_after: true
+  forbid_silent_drop: true
+  message_on_violation: 未记录处理前后统计的步骤视为无效，闸门 G2-04 阻断
+
+# ---------------------------------------------------------------
+# 七、诚实交付（铁律七）
+# ---------------------------------------------------------------
+honesty:
+  allowed_status: [completed, partial, failed]
+  forbidden_phrases:
+    - 基本完成
+    - 大致正确
+    - 应该没问题
+    - 完美解决
+    - 百分之百正确
+  rules:
+    - 未实际读取文件不得声称已核对
+    - 未实际运行检查不得声称全部正确
+    - 未实际生成文件不得声称文件已生成
+    - 存在未处理告警不得声称 completed
+  unverifiable_must_declare: true
+
+# ---------------------------------------------------------------
+# 八、非 ASCII 处理（铁律八）
+# ---------------------------------------------------------------
+ascii_sanitization:
+  enabled: true
+  scope: [column_names, fixed_effect_levels]
+  # 三级降级策略，逐级尝试
+  strategy:
+    - level: 1
+      method: header_map_lookup
+      desc: 查 configs/qc/phenotype-qc.yaml#header_map 的中文→英文映射
+    - level: 2
+      method: pypinyin
+      desc: 转拼音首字母大写驼峰，去除非字母数字字符
+    - level: 3
+      method: positional_alias
+      desc: 生成 COL{n} / LV{n} 占位名，并在映射表中登记原值
+  mapping_output: "{prefix}_name_mapping.json"
+  restore_on_report: true      # 报告中还原为原始中文名，便于阅读
+  reason: HIBLUP v1.7.0 Windows 版写 .rand 时遇非 ASCII 触发 0xC0000409 崩溃
+
+# ---------------------------------------------------------------
+# 九、路径与资源（跨平台默认值；部署环境可覆盖）
+# ---------------------------------------------------------------
+resources:
+  temp_dir: ".workbuddy_temp"
+  temp_dir_fallback: ".workbuddy_temp"
+  forbid_c_drive_write: false
+  python_executable: "python"
+  python_launch_flag: null
+  site_packages_inject: null
+  env_overrides: {}
+  threads_default: auto
+  threads_cap: 16
+  memory_guard:
+    warn_at_gb: 12
+    abort_at_gb: 28
+  # -------------------------------------------------------------
+  # 输出目录守卫（S1）：交付件固化前会 rmtree 目标子目录，
+  # 故 output_dir 必须落在白名单根之下，且不得命中受保护目录。
+  # {ABGES_ROOT} 由 core.get_abges_root() 展开。
+  # -------------------------------------------------------------
+  output_dir_policy:
+    enabled: true
+    allowed_roots_env: ABGES_OUTPUT_ROOTS     # os.pathsep 分隔，追加而非覆盖
+    allowed_roots:
+      - "{ABGES_ROOT}"
+      - "{ABGES_ROOT}/workspace"
+    forbidden_roots:
+      - "{ABGES_ROOT}/.git"
+      - "{ABGES_ROOT}/configs"
+      - "{ABGES_ROOT}/tools"
+      - "{ABGES_ROOT}/tasks"
+      - "{ABGES_ROOT}/harness"
+      - "{ABGES_ROOT}/runners"
+      - "{ABGES_ROOT}/schemas"
+      - "{ABGES_ROOT}/scripts"
+      - "{ABGES_ROOT}/tests"
+      - "C:/Windows"
+      - "C:/Program Files"
+      - "C:/Program Files (x86)"
+      - "C:/Users"
+      - "C:/Users/Administrator"
+    forbid_drive_root: true                   # 禁止 D:/ C:/ 这类盘符根
+    forbid_user_home_root: true                # 禁止用户主目录根本身
+
+# ---------------------------------------------------------------
+# 十、超时与重试
+# ---------------------------------------------------------------
+timeouts:
+  default_tool_timeout: 3600
+  pblup: 3600
+  gblup: 7200
+  ssblup: 10800
+retry:
+  # 只对确定性可恢复的失败重试，禁止盲目重试
+  max_attempts: 2
+  retryable:
+    - vc_not_converged      # AI -> EM
+    - transient_io_error
+  non_retryable:
+    - engine_nonzero_exit
+    - preflight_failed
+    - gate_blocked
+  forbid_silent_retry: true   # 每次重试必须写审计
+
+# ---------------------------------------------------------------
+# 十一、人工介入
+# ---------------------------------------------------------------
+human_in_the_loop:
+  # 以下动作必须先获人工确认
+  require_confirmation:
+    - 覆盖任何既有正式结果
+    - 放宽闸门阈值
+    - 删除 workspace 下的正式产出
+    - 修改原始输入文件
+    - 对外提交或发布结果
+  auto_proceed:
+    - 读取、分析、统计
+    - 生成新的中间文件与结果文件
+    - 自动剔除单水平固定效应（须告警）
+    - 非 ASCII 自动转码（须记录映射）
+
+# ---------------------------------------------------------------
+# 十二、审计
+# ---------------------------------------------------------------
+audit:
+  enabled: true
+  level: full
+  format: jsonl
+  output: workspace/logs/audit_{run_id}.jsonl
+  record:
+    - 每次工具调用的完整命令行与退出码
+    - 每次闸门判定
+    - 每次数据剔除的行数与原因
+    - 每次参数覆盖与其理由
+    - 每次重试
+  retention_days: 365

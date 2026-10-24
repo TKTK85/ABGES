@@ -1,0 +1,134 @@
+# ABGES 模型登记表
+# 作用：模型选择的唯一权威索引，planner 依据本表决策，不得硬编码
+# 版本：1.0.0
+
+meta:
+  config_id: model-registry
+  version: "1.0.0"
+  updated: "2026-08-07"
+  owner: 06-geneval-planner-agent
+
+models:
+  - id: pblup
+    name: 系谱BLUP
+    config: configs/models/pblup.yaml
+    workflow: workflows/pblup-workflow.yaml
+    engine: hiblup
+    requires: [phenotype, pedigree]
+    forbids: []
+    priority: 1
+    status: production
+    description: 无基因型数据时的默认方案，依赖系谱 A 矩阵
+
+  - id: gblup
+    name: 基因组BLUP
+    config: configs/models/gblup.yaml
+    workflow: workflows/gblup-workflow.yaml
+    engine: hiblup
+    requires: [phenotype, genotype]
+    forbids: []
+    priority: 2
+    status: production
+    description: 所有分析个体均已基因分型时使用，依赖 G 矩阵
+
+  - id: ssblup
+    name: 单步基因组BLUP
+    config: configs/models/ssblup.yaml
+    workflow: workflows/ssblup-workflow.yaml
+    engine: hiblup
+    requires: [phenotype, pedigree, genotype]
+    forbids: []
+    priority: 3
+    status: production
+    description: 部分个体有基因型时的首选方案，H 矩阵融合 A 与 G
+
+# ---------------------------------------------------------------
+# 自动选型决策表（planner 按顺序匹配，命中即停）
+# 判定输入由 05-data-integration 提供的数据可用性清单给出
+# ---------------------------------------------------------------
+selection_rules:
+  - rule_id: MS001
+    condition:
+      has_phenotype: true
+      has_pedigree: true
+      has_genotype: true
+      genotyped_ratio_lt: 0.95     # 已测型个体占比 < 95%
+    select: ssblup
+    reason: 部分个体有基因型，单步法可同时利用测型与未测型个体信息
+
+  - rule_id: MS002
+    condition:
+      has_phenotype: true
+      has_pedigree: true
+      has_genotype: true
+      genotyped_ratio_gte: 0.95
+    select: gblup
+    reason: 绝大多数个体已基因分型，直接使用 G 矩阵
+
+  - rule_id: MS003
+    condition:
+      has_phenotype: true
+      has_pedigree: false
+      has_genotype: true
+    select: gblup
+    reason: 无系谱可用，只能走基因组路线
+
+  - rule_id: MS004
+    condition:
+      has_phenotype: true
+      has_pedigree: true
+      has_genotype: false
+    select: pblup
+    reason: 仅有系谱，走经典 PBLUP
+
+  - rule_id: MS005
+    condition:
+      has_phenotype: true
+      has_pedigree: false
+      has_genotype: false
+    select: null
+    reason: 既无系谱也无基因型，无法构建亲缘关系矩阵
+    action: 判定 failed，明确告知缺少的数据类型
+
+# 用户显式指定模型时的处理
+explicit_override:
+  allowed: true
+  # 用户指定的模型若数据不满足 requires，不得静默改选
+  on_requirement_unmet:
+    action: 拒绝执行并说明缺失数据，同时给出本表推荐的可行模型
+    forbid_silent_switch: true
+  audit_required: true
+
+# ---------------------------------------------------------------
+# 多性状分析
+# ---------------------------------------------------------------
+multi_trait:
+  enabled: true
+  hiblup_flag: "--multi-trait"
+  max_traits: 5
+  standardization: none       # 2026-10-12 由 zscore 修订：不标准化，见各模型 standardization 段
+  note: 多性状显著增加计算量与不收敛风险，超过 3 个性状时 planner 须给出告警
+
+# ---------------------------------------------------------------
+# 引擎登记
+# ---------------------------------------------------------------
+engines:
+  hiblup:
+    binary: tools/HIBLUP/hiblup.exe
+    version_required: ">=1.6.0"
+    version_check_flag: "--version"
+    known_issues:
+      - id: HIBLUP-WIN-NONASCII
+        version: "1.7.0"
+        platform: windows
+        symptom: 表型文件含非 ASCII 列名或水平值时，写 .rand 阶段触发 0xC0000409 崩溃
+        mitigation: 调用前强制 sanitize_pheno_for_hiblup 三级降级转码
+      - id: HIBLUP-SINGULAR-FE
+        version: "1.7.0"
+        symptom: 单水平固定效应导致设计矩阵奇异
+        mitigation: preflight E022 自动剔除
+  plink:
+    binary: tools/PLINK/plink2.exe
+    version_required: ">=2.0"
+    version_check_flag: "--version"
+    usage: 基因型质控与格式转换，不参与方差组分估计

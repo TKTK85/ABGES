@@ -1,0 +1,472 @@
+# ABGES 统一列名别名注册表（column-aliases）
+# =========================================================
+# 用途：全系统列名标准化的单一权威数据源。
+#       替换分散在三处的别名定义：
+#         - header_translation.yaml 的 46 条 chinese_to_code
+#         - phenotype-qc.yaml 的 header_map（155+ 条）
+#         - trait-registry.yaml 的 name_cn 字段
+#
+# 优先级（列名检测顺序）：
+#   P1. 本表 aliases（含精确匹配 + 大小写折叠 + 空格归一）
+#   P2. pypinyin 拼音首字母兜底（只针对中文列）
+#   P3. unknown_columns 处理（落入 UX_ 前缀，交人工）
+#
+# 冲突处理规则：
+#   - 同一别名映射到多个标准代码 → 保留优先级最高的角色，报歧义告警
+#   - 同一标准代码有多个别名 → 全部保留，覆盖完整
+#   - 标准代码以 trait-registry.yaml 的 trait_id 为准
+#
+# 版本历史：
+#   v1.0  2026-10-16  初版，从三处配置合并去重建立
+# =========================================================
+
+version: "1.0"
+updated: "2026-10-16"
+
+# ---------------------------------------------------------------------------
+# 标识字段（role: id）
+# ---------------------------------------------------------------------------
+identifiers:
+  - standard_code: ID
+    name_cn: 个体号
+    name_en: Individual ID
+    role: id
+    aliases:
+      # 中文变体
+      - 个体号
+      - 个体id
+      - 个体编号
+      - 鸡号
+      - 翅号          # 注：翅号为产蛋记录表主键，非系谱标识
+      # 英文变体
+      - id
+      - ID
+      - Id
+      # 全局唯一主键（部分品系表）
+      - ch           # 翅号英译缩写（Excel 列名常见）
+      - CH
+
+# ---------------------------------------------------------------------------
+# 系谱字段（role: pedigree）
+# ---------------------------------------------------------------------------
+pedigree:
+  - standard_code: Sire
+    name_cn: 父本号
+    name_en: Sire ID
+    role: pedigree
+    aliases:
+      - 父
+      - 父本
+      - 父id
+      - 父号
+      - sire
+      - Sire
+      - SIRE
+
+  - standard_code: Dam
+    name_cn: 母本号
+    name_en: Dam ID
+    role: pedigree
+    aliases:
+      - 母
+      - 母本
+      - 母id
+      - 母号
+      - dam
+      - Dam
+      - DAM
+
+# ---------------------------------------------------------------------------
+# 固定效应候选（role: fixed）
+# ---------------------------------------------------------------------------
+fixed_effects:
+  - standard_code: Gen
+    name_cn: 世代
+    name_en: Generation
+    role: fixed
+    aliases:
+      - 世代
+      - 代次
+      - gen
+      - Gen
+      - GEN
+      - generation
+
+  - standard_code: Batch
+    name_cn: 批次
+    name_en: Batch
+    role: fixed
+    aliases:
+      - 批次
+      - 批
+      - 批号
+      - batch
+      - Batch
+      - BATCH
+      - bat            # 历史遗留缩写（统一为 Batch 后保留此别名）
+      - Bat
+      - BAT
+
+  - standard_code: Sex
+    name_cn: 性别
+    name_en: Sex
+    role: fixed
+    aliases:
+      - 性别
+      - sex
+      - Sex
+      - SEX
+
+  - standard_code: House
+    name_cn: 栋舍
+    name_en: House / Barn
+    role: fixed
+    aliases:
+      - 栋舍
+      - 鸡舍
+      - house
+      - House
+      - HOUSE
+
+  - standard_code: Row
+    name_cn: 笼排
+    name_en: Cage Row
+    role: fixed
+    aliases:
+      - 笼排
+      - row
+      - Row
+      - ROW
+
+  - standard_code: Cage
+    name_cn: 笼位
+    name_en: Cage
+    role: fixed
+    aliases:
+      - 笼位
+      - cage
+      - Cage
+
+  - standard_code: Family
+    name_cn: 家系
+    name_en: Family
+    role: fixed
+    aliases:
+      - 家系
+      - family
+      - Family
+      - FAMILY
+
+  - standard_code: Farm
+    name_cn: 场区
+    name_en: Farm
+    role: fixed
+    aliases:
+      - 场区
+      - farm
+      - Farm
+
+  - standard_code: CageLetter
+    name_cn: 笼位字母
+    name_en: Cage Letter
+    role: fixed
+    aliases:
+      - 笼位字母
+
+# ---------------------------------------------------------------------------
+# 协变量候选（role: covariate）
+# ---------------------------------------------------------------------------
+covariates:
+  - standard_code: Age
+    name_cn: 测定日龄
+    name_en: Age at measurement
+    role: covariate
+    unit: "d"
+    aliases:
+      - 日龄
+      - 测定日龄
+      - age
+      - Age
+      - AGE
+
+  - standard_code: BirthWt
+    name_cn: 初生重
+    name_en: Birth weight
+    role: covariate
+    unit: "g"
+    aliases:
+      - 初生重
+      - birthwt
+      - BirthWt
+      - BIRTHWT
+
+  - standard_code: AFE
+    name_cn: 开产日龄
+    name_en: Age at first egg
+    role: covariate
+    unit: "d"
+    aliases:
+      - 开产日龄
+      - afe
+      - AFE
+      - afew          # 部分品系写法
+      - kcrl          # 拼音缩写
+
+  - standard_code: CollectDays
+    name_cn: 收蛋天数
+    name_en: Days of egg collection
+    role: covariate
+    unit: "d"
+    aliases:
+      - 收蛋天数
+      - collectdays
+      - CollectDays
+
+  - standard_code: CDTS
+    name_cn: 出雏日期
+    name_en: Hatch date
+    role: covariate
+    unit: "d"
+    note: "数值化为距最早出雏日期的天数；不同批次时间不同，需组内对齐"
+    aliases:
+      - 出雏日期
+      - 出雏日
+      - 孵化日期
+      - cdrq            # 拼音缩写（错误，正确为 cdts）
+      - cdts            # 英文缩写
+      - CDTS
+      - cdtS
+
+# ---------------------------------------------------------------------------
+# 目标性状（role: trait）
+# ---------------------------------------------------------------------------
+traits:
+  # ---- 体重（按测定日龄可衍生多个 BW 列，如 BW35/BW49/BW70）----
+  - standard_code: BW
+    name_cn: 体重
+    name_en: Body weight
+    role: trait
+    unit: "g"
+    aliases:
+      - 体重
+      - 体质量
+      - bw
+      - BW
+      - bw35
+      - bw49
+      - bw56
+      - bw62
+      - bw63
+      - bw70
+      - 35d
+      - 49d
+      - 35日龄体重
+      - 49日龄体重
+      - 56日龄体重
+      - 62日龄体重
+      - 70日龄体重
+      - 35日龄活重
+      - 49日龄活重
+      - 56日龄活重
+      - 70日龄活重
+      - 62日龄活重
+      - 体重bw
+
+  - standard_code: EW
+    name_cn: 蛋重
+    name_en: Egg weight
+    role: trait
+    unit: "g"
+    aliases:
+      - 蛋重
+      - ew
+      - EW
+
+  - standard_code: EN
+    name_cn: 产蛋数
+    name_en: Egg number
+    role: trait
+    unit: "枚"
+    aliases:
+      - 产蛋数
+      - 产蛋量
+      - 300日龄产蛋数
+      - 300日龄
+      - en
+      - EN
+      - cds            # 拼音缩写
+      - 产蛋数420
+      - 产蛋数420日龄
+      - 420日龄产蛋数
+      - 产蛋数.1        # Excel 重复列名自动加后缀
+
+  - standard_code: ER
+    name_cn: 产蛋率
+    name_en: Egg production rate
+    role: trait
+    unit: "%"
+    aliases:
+      - 产蛋率
+      - er
+      - ER
+      - cdl            # 拼音缩写
+      - 产蛋率420
+      - 产蛋率420日龄
+      - 420日龄产蛋率
+      - 300日龄产蛋率
+      - 产蛋率.1        # Excel 重复列名自动加后缀
+
+  - standard_code: FI
+    name_cn: 采食量
+    name_en: Feed intake
+    role: trait
+    unit: "g"
+    aliases:
+      - 采食量
+      - fi
+      - FI
+
+  - standard_code: WG
+    name_cn: 增重
+    name_en: Weight gain
+    role: trait
+    unit: "g"
+    aliases:
+      - 增重
+      - wg
+      - WG
+      - 35-49增重
+      - 35-56增重
+      - 35-62增重
+      - 35-63增重
+      - 49-62增重
+      - 49-35增重
+      - 56-35增重
+      - 56-63增重
+      - 56-70增重
+      - 62-35增重
+      - 62-49增重
+      - 63-35增重
+      - 63-56增重
+      - 70-35增重
+      - 70-56增重
+      - 35-49日龄增重
+      - 49-62日龄增重
+      - 56-70日龄增重
+      - 35-62日龄增重
+      - 35-56日龄增重
+
+  - standard_code: ACL
+    name_cn: 平均连产长度
+    name_en: Average clutch length
+    role: trait
+    unit: "枚/连产"
+    note: "衍生性状，计算公式见 derived-traits.yaml / clutch_algorithm.md"
+    aliases:
+      - 平均连产长度
+      - 连产            # 简称
+      - acl
+      - ACL
+      - pjlc            # 拼音缩写
+
+  - standard_code: MCL
+    name_cn: 最大连产长度
+    name_en: Maximum clutch length
+    role: trait
+    unit: "枚"
+    note: "衍生性状，计算公式见 derived-traits.yaml / clutch_algorithm.md"
+    aliases:
+      - 最大连产长度
+      - mcl
+      - MCL
+      - zdlc            # 拼音缩写
+
+  - standard_code: NCC
+    name_cn: 连产段数
+    name_en: Number of clutch cycles
+    role: trait
+    unit: "段"
+    note: "新增衍生性状（2026-10-16），统计产蛋周期数"
+    aliases:
+      - 连产段数
+      - ncc
+      - NCC
+
+  - standard_code: CEN
+    name_cn: 累计产蛋数
+    name_en: Cumulative egg number
+    role: trait
+    unit: "枚"
+    aliases:
+      - 累计产蛋数
+      - cen
+      - CEN
+      - ljcs            # 拼音缩写
+
+  - standard_code: FCR
+    name_cn: 料重比
+    name_en: Feed conversion ratio
+    role: trait
+    unit: "g/g"
+    aliases:
+      - 料重比
+      - FCR
+      - fcr
+      - FCR料肉比
+      - 料肉比
+
+  - standard_code: DR
+    name_cn: 全净膛率
+    name_en: Dressing percentage (eviscerated)
+    role: trait
+    unit: "%"
+    aliases:
+      - 全净膛率
+      - 全净膛率(%)
+      - DR
+      - dr
+
+  - standard_code: AF
+    name_cn: 腹脂率
+    name_en: Abdominal fat percentage
+    role: trait
+    unit: "%"
+    aliases:
+      - 腹脂率
+      - 腹脂率(%)
+      - AF
+      - af
+
+  - standard_code: TW
+    name_cn: 睾丸重
+    name_en: Testis weight
+    role: trait
+    unit: "g"
+    aliases:
+      - 睾丸重
+      - 睾丸重量
+      - 睾丸重g
+      - 睾丸重(g)
+      - TW
+      - tw
+
+  - standard_code: Egg43W
+    name_cn: 43周产蛋数
+    name_en: Egg number at 43 weeks
+    role: trait
+    unit: "枚"
+    aliases:
+      - 43周产蛋数
+      - 43周产蛋率
+      - Egg43W
+      - egg43w
+
+# ---------------------------------------------------------------------------
+# 歧义别名说明（ambiguous aliases）
+# ---------------------------------------------------------------------------
+# 以下别名可能对应多个标准代码，需人工确认后再正式纳入 aliases。
+# 当前处理策略：列在此处，在自动检测时跳过，由 unknown_columns 兜底。
+ambiguous:
+  - alias: 父
+    candidates: [Sire, ID]      # 在某些表中翅号列名含"父"字样，需按表语义判断
+    resolution: '翅号列名含"父"字样时，人工确认后明确为 Sire 或 ID'

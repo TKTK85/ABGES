@@ -1,0 +1,218 @@
+# ABGES Agent 登记表
+# 作用：定义 1 个 Supervisor + 9 个专业 Agent 的职责、输入输出与调用边界
+# 由 harness/router 依据本表路由，Agent 不得自行越界调用
+# 版本：1.0.0
+
+meta:
+  config_id: agent-registry
+  version: "1.0.0"
+  updated: "2026-08-07"
+  owner: harness/router
+  total_agents: 10
+
+# ---------------------------------------------------------------
+# 通用约束（适用于全部 Agent）
+# ---------------------------------------------------------------
+common_constraints:
+  output_schema: schemas/agent-output-schema.yaml
+  must_declare_status: true          # completed | partial | failed
+  forbid_direct_subprocess: true     # 外部程序一律经 harness/tool-executor
+  forbid_raw_data_write: true        # 原始数据只读
+  must_record_statistics: true       # 涉及数据增删改必须给出前后统计
+  max_retry: 2
+
+agents:
+  # -------------------------------------------------------------
+  - id: "00"
+    key: supervisor
+    name: 总控智能体
+    dir: agents/00-supervisor-agent
+    role: 任务理解、流程编排、Agent 调度、最终结论汇总
+    inputs: [用户任务描述, 数据路径清单]
+    outputs: [任务计划, 各阶段调度指令, 最终交付结论]
+    skills: []
+    can_call: ["01", "02", "03", "04", "05", "06", "07", "08", "09"]
+    gates: []
+    notes: 唯一有权决定流程走向的 Agent，但不得绕过闸门
+
+  # -------------------------------------------------------------
+  - id: "01"
+    key: phenotype
+    name: 表型质控智能体
+    dir: agents/01-phenotype-agent
+    role: 表型数据读取、列名标准化、缺失与异常值处理、固定效应识别
+    inputs: [原始表型文件]
+    outputs: [标准化表型表, 表型QC报告, 处理前后统计]
+    skills: ["01-phenotype-qc"]
+    config: configs/qc/phenotype-qc.yaml
+    can_call: []
+    gates: [G1, G2]
+    key_rules: [PH001-PH007, E023 非ASCII转码]
+
+  # -------------------------------------------------------------
+  - id: "02"
+    key: pedigree
+    name: 系谱质控智能体
+    dir: agents/02-pedigree-agent
+    role: 系谱读取与标准化、记录级 QC、成环检测、父母角色检查、世代推断与拓扑排序
+    inputs: [原始系谱文件]
+    outputs: [标准化系谱表, 系谱QC报告, 处理前后统计]
+    skills: ["02-pedigree-qc"]
+    config: configs/qc/pedigree-qc.yaml
+    can_call: []
+    gates: [G1, G2]
+    key_rules: [PD001-PD015, 最大追溯世代 5]
+
+  # -------------------------------------------------------------
+  - id: "03"
+    key: genotype
+    name: 基因型质控智能体
+    dir: agents/03-genotype-agent
+    role: 基因型格式识别与转换、PLINK 质控、位点与个体过滤
+    inputs: [原始基因型文件]
+    outputs: [质控后二进制基因型, 基因型QC报告, 处理前后统计]
+    skills: ["03-genotype-qc"]
+    config: configs/qc/genotype-qc.yaml
+    tools: [tools/PLINK/plink2.exe]
+    can_call: []
+    gates: [G1, G2]
+    key_rules: [GT001-GT008]
+    optional: true      # 无基因型数据时跳过
+
+  # -------------------------------------------------------------
+  - id: "04"
+    key: derived_trait
+    name: 衍生性状智能体
+    dir: agents/04-derived-trait-agent
+    role: 由原始记录计算衍生性状（ACL/MCL/CEN/FCR 等）
+    inputs: [原始表型表(按需), 原始捡蛋记录表(按需)]
+    outputs: [含衍生性状的表型表, 计算过程说明, 处理前后统计]
+    skills: ["04-derived-trait-calculation"]
+    config: configs/traits/derived-traits.yaml
+    can_call: []
+    gates: [G2]
+    optional: true      # 目标性状为原始性状时跳过
+
+  # -------------------------------------------------------------
+  - id: "05"
+    key: integration
+    name: 数据整合智能体
+    dir: agents/05-data-integration-agent
+    role: 表型/系谱/基因型三源 ID 对接、交集统计、生成引擎输入文件
+    inputs: [标准化表型表, 标准化系谱表, 质控后基因型]
+    outputs: [HIBLUP 输入表型文件(tsv), 系谱文件(csv), 对接统计, 数据可用性清单]
+    skills: ["05-data-integration"]
+    can_call: []
+    gates: [G3]
+    key_rules: [ID 前导零/大小写/空白字符归一化, 交集下限 100]
+
+  # -------------------------------------------------------------
+  - id: "06"
+    key: planner
+    name: 评估规划智能体
+    dir: agents/06-geneval-planner-agent
+    role: 依据数据可用性选择模型、确定固定效应与协变量、生成执行计划
+    inputs: [数据可用性清单, 用户指定性状, 用户指定模型(可选)]
+    outputs: [执行计划(含模型/性状列序号/固定效应/协变量/引擎参数)]
+    skills: ["06-geneval-planning"]
+    config: [configs/models/model-registry.yaml, configs/traits/trait-registry.yaml]
+    can_call: []
+    gates: [G4]
+    key_rules: [MS001-MS005 选型规则, E022 单水平剔除, 标准化 PH007]
+
+  # -------------------------------------------------------------
+  - id: "07"
+    key: runner
+    name: 评估执行智能体
+    dir: agents/07-geneval-runner-agent
+    role: 组装并提交 HIBLUP 命令、监控执行、解析原始输出
+    inputs: [执行计划, 引擎输入文件]
+    outputs: [.vars/.rand/.beta/.log 原始输出, 解析后的方差组分与EBV, 运行元数据]
+    skills: ["07-geneval-execution"]
+    config: [configs/models/pblup.yaml, configs/models/gblup.yaml, configs/models/ssblup.yaml]
+    tools: [tools/HIBLUP/hiblup.exe]
+    can_call: []
+    gates: [G4, G5]
+    key_rules: [超时控制, AI->EM 回退, 非零退出码不重试]
+
+  # -------------------------------------------------------------
+  - id: "08"
+    key: validator
+    name: 结果验证智能体
+    dir: agents/08-result-validator-agent
+    role: 结果完整性与合理性判定、跨模型对照、告警汇总
+    inputs: [引擎原始输出, 运行元数据, 历史基线(可选)]
+    outputs: [验证报告, 告警清单, 交付状态判定]
+    skills: ["08-geneval-validation"]
+    config: configs/gates/gate-rules.yaml
+    can_call: []
+    gates: [G5]
+    key_rules: [h² 范围, SE/h² 比值, 收敛判定, 文献参考区间对照]
+
+  # -------------------------------------------------------------
+  - id: "09"
+    key: reporter
+    name: 报告生成智能体
+    dir: agents/09-report-agent
+    role: 汇总全流程结果，生成中文评估报告与结果表
+    inputs: [验证报告, 方差组分, EBV表, 全流程统计与告警]
+    outputs: [评估报告(md/docx), EBV排名表(xlsx), 图表]
+    skills: ["09-geneval-reporting"]
+    templates: templates/geneval-report
+    can_call: []
+    gates: [G6]
+    key_rules: [列名还原为中文, 告警全部呈现, 状态三态不得模糊]
+
+# ---------------------------------------------------------------
+# 标准编排顺序（具体分支见 workflows/*.yaml）
+# ---------------------------------------------------------------
+default_pipeline:
+  - "00"    # 任务理解与规划
+  - "04"    # 派生性状（需要时，必须先于表型QC）
+  - "01"    # 表型QC
+  - "02"    # 系谱QC（有系谱时）
+  - "03"    # 基因型QC（有基因型时）
+  - "05"    # 数据整合
+  - "06"    # 评估规划
+  - "07"    # 评估执行
+  - "08"    # 结果验证
+  - "09"    # 报告生成
+
+# 并行策略：原始性状与派生性状使用不同分支拓扑；Harness 合并门禁后再进入 05
+parallel_groups:
+  # 原始性状：01/02/03 为相互独立的数据处理分支。
+  - members: ["01", "02", "03"]
+    when: raw_traits
+  # 派生性状：04 先生成性状；02/03 与 04 并行，01 只在 04 完成后接收其输出。
+  - members: ["02", "03", "04"]
+    when: derived_traits
+
+# 跳过条件
+skip_conditions:
+  "02": 无系谱文件且模型为 gblup
+  "03": 无基因型文件
+  "04": 目标性状均为原始性状，无需派生
+
+# ---------------------------------------------------------------
+# 强制流程约束（FlowIntegrityEnforcer）
+# 由 harness/flow-enforcer 统一执行，确保 default_pipeline 严格顺序执行：
+#   1) 每阶段启动前校验所有「非并行组」前置阶段 stage_status == completed
+#      （声明式合法跳过 SKIP_NOT_APPLICABLE 视为完成，不计入违规）；
+#   2) 每阶段完成登记后校验其登记的产物文件存在且非空（非空由 verify_required_outputs 口径）；
+#   3) 下列沉默失败点已升级为硬阻断：声明固定效应缺失(G4-03)、HIBLUP 输出缺失/为空、
+#      收敛未确认(G5-03)、EBV 记录数与系谱个体数不符(G5-07)、Word 报告生成失败。
+# 任一违例 → FlowViolationError → Orchestrator.run 顶层捕获 → 打印中断横幅并令运行以
+# 非零状态退出，绝不降级为 partial 后继续推进下游阶段。
+# 各阶段必须产出的关键产物（produces）由 stage_runner 经 state.put_artifact 登记，
+# 名单以 runner 实际登记为准；此处仅作契约声明与审计依据：
+flow_integrity:
+  enforced: true
+  halt_on: [upstream_incomplete, outputs_incomplete, declared_fixed_effect_missing,
+            hiblup_output_missing_or_empty, convergence_unconfirmed,
+            ebv_count_mismatch, report_generation_failed]
+  produces_contract:
+    "01": [phenotype_qc_report.json, engine_phenotype.txt]
+    "02": [pedigree_qc_report.json, engine_pedigree.csv]
+    "06": [execution_plan.json]
+    "07": ["<out>.vars", "<out>.rand", "<out>.beta", "<out>.log"]
+    "09": [result.json, "*.docx"]

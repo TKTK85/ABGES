@@ -1,0 +1,50 @@
+# ABGES 中文表头 → 英文代号 人工词典（未知性状/固定效应自动处理 · 优先级 2）
+#
+# ⚠️ 废弃预告（2026-10-16）：
+#   本文件已被 configs/column-aliases.yaml 取代，后者为统一别名注册表。
+#   本文件保留作为降级兼容。优先编辑 column-aliases.yaml。
+#
+# 说明：
+#   - 本词典是"注册表 name_cn（优先级1）"之外的补充，用于确保重要性状/固定效应
+#     的英文代号语义正确（即使注册表未登记该中文名）。
+#   - 拼音首字母兜底（pypinyin，优先级3）可覆盖任意中文，但多音字/生僻字可能取错，
+#     重要性状建议在 column-aliases.yaml 中显式登记。
+#   - 键为中文表头（与数据列名逐字匹配），值为英文代号（须与 trait-registry 风格一致）。
+version: "1.0"
+chinese_to_code:
+  # 标识与系谱
+  个体号: ID
+  鸡号: ID
+  父本: Sire
+  母本: Dam
+  # 固定效应候选
+  世代: Gen
+  批次: Batch
+  批号: Batch
+  性别: Sex
+  栋舍: House
+  鸡舍: House
+  笼位: Cage
+  笼排: Row
+  家系: Family
+  场区: Farm
+  # 协变量候选
+  日龄: Age
+  测定日龄: Age
+  开产日龄: AFE
+  收蛋天数: CollectDays
+  初生重: BirthWt
+  # 目标性状
+  体重: BW
+  蛋重: EW
+  产蛋数: EN
+  产蛋率: ER
+  采食量: FI
+  增重: WG
+  料重比: FCR
+  腹脂率: AF
+  全净膛率: DR
+  睾丸重: TW
+  累计产蛋数: CEN
+  平均连产长度: ACL
+  最大连产长度: MCL

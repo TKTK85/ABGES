@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "engines": [
+    {
+      "name": "HIBLUP",
+      "version": "1.7.0",
+      "path": "tools/HIBLUP/hiblup.exe",
+      "sha256": "8a6cce4e0d2fa0d73d0032212a527214c2581a00601f2ab25c56b1752f2941ac",
+      "required_files": [
+        "hiblup.exe",
+        "libiomp5md.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll"
+      ]
+    },
+    {
+      "name": "PLINK",
+      "version": "2 (local distribution)",
+      "path": "tools/PLINK/plink2.exe",
+      "sha256": "247491bfca7512e070dc99d6565e9fc56f3a52ad5afc01286016271d34c4992f",
+      "required_files": [
+        "plink2.exe"
+      ]
+    },
+    {
+      "name": "Windows PowerShell",
+      "version": "5.1 (Windows inbox binary)",
+      "path": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+      "sha256": "b415fd46f5bdcbef2fc3e336251b22f5fc50d60fc6826ea34783b84f59aa8d6a",
+      "required_files": [
+        "powershell.exe"
+      ]
+    }
+  ]
+}

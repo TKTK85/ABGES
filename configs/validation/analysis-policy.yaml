@@ -1,0 +1,31 @@
+# 数据质量与结果阈值的项目级默认策略。
+# 数值是自动提示/验收参数，不代表跨物种的生物学真理。变更本文件时
+# 必须同步更新版本、变更原因和适用范围；本次运行元数据记录完整策略快照。
+meta:
+  config_id: analysis-validation-policy
+  version: "1.0.0"
+  updated: "2026-10-22"
+heritability_bounds: [0.0, 1.0]
+quality_gates:
+  phenotype_min_valid_records: 100
+  phenotype_max_drop_rate: 0.30
+  genotype_min_snps: 1000
+  genotype_min_samples: 50
+  phenotype_pedigree_min_overlap: 100
+  phenotype_pedigree_min_coverage: 0.80
+  phenotype_genotype_min_overlap: 50
+  se_to_h2_warning: 0.5
+heritability_reference_ranges_by_species:
+  chicken:
+    # 鸡性状经验区间，仅用于核查提示；不是硬性准入标准。
+    BW: [0.20, 0.60]
+    EW: [0.30, 0.70]
+    EN: [0.10, 0.40]
+    ER: [0.10, 0.40]
+    FI: [0.20, 0.50]
+    WG: [0.20, 0.50]
+    ACL: [0.15, 0.45]
+    MCL: [0.10, 0.40]
+    CEN: [0.10, 0.40]
+    FCR: [0.10, 0.40]
+    AFE: [0.20, 0.60]

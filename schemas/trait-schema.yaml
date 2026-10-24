@@ -1,0 +1,120 @@
+# ABGES 性状定义契约
+# 定义 configs/traits/trait-registry.yaml 中每条性状条目必须具备的字段
+# 版本：1.0.0
+
+meta:
+  schema_id: trait-schema
+  version: "1.0.0"
+  updated: "2026-08-07"
+  governs: configs/traits/trait-registry.yaml, configs/traits/derived-traits.yaml
+
+# ---------------------------------------------------------------
+# 性状条目字段规范
+# ---------------------------------------------------------------
+trait_entry:
+  required_fields:
+    - name: code
+      type: string
+      desc: 性状英文代码，ASCII，作为表型文件列名
+      constraints:
+        pattern: "^[A-Za-z][A-Za-z0-9_]*$"
+        unique: true
+
+    - name: name_cn
+      type: string
+      desc: 中文名称，仅用于报告呈现，不进入引擎
+
+    - name: category
+      type: enum
+      allowed_values: [growth, production, reproduction, efficiency, quality, other]
+      desc: 性状类别
+
+    - name: data_type
+      type: enum
+      allowed_values: [continuous, count, binary, ordinal]
+      desc: 数据类型，决定是否需要变换
+
+    - name: source
+      type: enum
+      allowed_values: [raw, derived]
+      desc: 原始观测 或 由其他字段计算得到
+
+  optional_fields:
+    - name: unit
+      type: string
+      desc: 计量单位，如 g / 枚 / 天 / %
+
+    - name: aliases
+      type: list[string]
+      desc: 原始文件中可能出现的中文或异体列名，用于自动识别
+
+    - name: valid_range
+      type: [float, float]
+      desc: 生物学合理取值区间，越界值按 phenotype-qc 规则处理
+
+    - name: h2_reference
+      type: [float, float]
+      desc: 文献遗传力参考区间，供 G5-08 结果合理性提示
+
+    - name: default_fixed_effects
+      type: list[string]
+      desc: 该性状默认建议的固定效应
+
+    - name: default_covariates
+      type: list[string]
+      desc: 该性状默认建议的连续协变量
+
+    - name: repeated_measure
+      type: boolean
+      default: false
+      desc: 是否为重复记录性状，为真时模型启用永久环境效应
+
+    - name: note
+      type: string
+      desc: 口径说明、计算注意事项
+
+# ---------------------------------------------------------------
+# 衍生性状附加字段（source: derived 时必需）
+# ---------------------------------------------------------------
+derived_extra:
+  required_fields:
+    - name: derive_type
+      type: enum
+      allowed_values: [record, formula]
+      desc: record=基于明细记录聚合；formula=基于已有字段公式计算
+
+    - name: depends_on
+      type: list[string]
+      desc: 依赖的字段或记录表，缺失则该性状不可计算
+
+  conditional_fields:
+    - when: "derive_type == formula"
+      field: expression
+      type: string
+      desc: 计算表达式，仅允许四则运算与已登记字段名
+      example: "FCR = FI / WG"
+
+    - when: "derive_type == record"
+      field: aggregation
+      type: object
+      desc: 明细记录的聚合规则
+      example:
+        source_table: egg_record
+        group_by: ID
+        rule: 连续产蛋天数的最大值
+
+  missing_dependency_policy:
+    action: declare_and_ask
+    forbid_silent_skip: true
+    forbid_silent_fill: true
+    message: 缺少依赖字段时必须明确告知缺什么、影响什么，不得静默跳过或填充
+
+# ---------------------------------------------------------------
+# 一致性约束
+# ---------------------------------------------------------------
+consistency:
+  - trait-registry 中的每个 code 在表型文件中最多对应一列
+  - derived-traits 中定义的性状必须同时在 trait-registry 中登记
+  - aliases 在全表范围内不得重复，避免列名识别歧义
+  - valid_range 下界必须小于上界
+  - h2_reference 必须落在 [0, 1]

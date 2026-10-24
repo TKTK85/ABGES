@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8,<10
+# 【S8】覆盖率统计与门禁（pytest.ini 中 --cov-fail-under=30 依赖此插件）。
+pytest-cov>=5,<8

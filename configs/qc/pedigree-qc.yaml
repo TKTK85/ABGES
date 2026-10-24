@@ -1,0 +1,217 @@
+# ABGES 系谱质量控制规则
+# 记录级问题直接剔除；仅使用最终无未解决问题的系谱子集进行评估。
+# 2026-08-17 v1.1：PD001–PD013 描述学术化（参照《系谱核查方案_WT.md》）；
+#   阈值对齐（近交系数告警 0.125→0.0375）；补齐 WT 维度（世代判定/翅号编码/脏数据/
+#   整行重复/日期越界/链追溯/基础群分布）。
+# 2026-08-17 v1.2：规则同类合并与连续重编号，畜牧兽医专业术语规范化；全部阈值与语义不变。
+#   合并映射：原PD002+原PD003+原PD017→PD002；原PD015+原PD016→PD003；
+#             原PD018→PD008；原PD020→PD010；原PD019→PD015。
+
+version: "2.1"
+updated: "2026-10-22"
+
+# 适用边界：采用有性生殖且具有父母本关系的群体系谱；规则按亲本角色定义，不按物种拆分。
+# species 字段仅作说明；系谱处理适用于有性生殖且亲本记录可区分父本/母本角色的群体。
+# 父母角色性别码用于兼容常见输入编码，不形成物种白名单。
+species: null
+species_sex_codes:
+  sire_male: [M, MALE, 1, 公, 雄]
+  dam_female: [F, FEMALE, 2, 母, 雌]
+# 亲子世代先后仅在显式声明遗传世代时启用；晚世代缺亲本按拓扑深度判定，不读取管理世代。
+generation_column_semantics: "unspecified"  # genetic_generation | unspecified/management_generation
+late_founder_generation: 0  # 允许存在未知亲本的最大拓扑深度
+
+input:
+  id_column: "ID"
+  sire_column: "Sire"
+  dam_column: "Dam"
+  missing_value: "NA"
+  # 视为未知亲本的取值（统一转为 missing_value）
+  unknown_tokens: ["", "0", "NA", "na", "N/A", "null", "NULL", "None", "-", "未知", "无"]
+  # 可选列（WT 核查维度所需，缺省时对应规则自动跳过并在报告中声明）
+  optional_columns:
+    generation_column: "Gen"          # 仅显式声明遗传世代时用于 PD008/PD014
+    birth_date_column: "BirthDate"    # 出生日期列（PD008 使用）
+    wing_column: "Wing"               # 独立翅号列（PD003 使用；缺省则退化校验个体号）
+    batch_column: "Batch"
+    sex_column: "Sex"
+
+# 统一处理策略：未知双亲是合法系谱状态；不自动修补亲子关系。
+cleaning_policy:
+  issue_action: "exclude_record"
+  cascade_descendants: true
+  retain_unaffected_components: true
+  auto_add_missing_parent_as_founder: false
+  unresolved_conflict: "exclude_all_conflicting_records"
+  report_each_exclusion: true
+  require_final_graph_valid: true
+  engine_unknown_parent_token: "0"
+
+# 从目标个体向上追溯的最大代数
+max_generations: 5
+
+# ---------------------------------------------------------------------------
+# QC 规则（编号连续 PD001–PD015；每条带 rule_id，change_log 必须引用）
+# ---------------------------------------------------------------------------
+rules:
+
+  PD001:
+    name: "系谱必备字段完整性（个体号/父号/母号）"
+    action: BLOCK
+    merged_from: ["PD001@1.1"]
+    description: >-
+      系谱须可解析出个体号、父号、母号三列（内部字段 ID/Sire/Dam）。
+      缺失任一即阻断：加性遗传相关矩阵（A 阵）构建与育种值求解依赖完整的亲本三元组。
+
+  PD002:
+    name: "个体号缺失与重复记录处理"
+    action: EXCLUDE_INVALID_RECORDS
+    merged_from: ["PD002@1.1", "PD003@1.1", "PD017@1.1"]
+    description: >-
+      个体号缺失直接剔除；仅 ID/Sire/Dam 三列完全相同的重复行保留一条；
+      同一 ID 的父本号或母本号任一不一致时，剔除该 ID 的全部记录及其后代。
+      可选字段的差异不构成亲本关系冲突；每条被去除的重复行均进入剔除明细。
+    keep: "first"
+  PD003:
+    name: "标识符规范性（脏数据归一与翅号编码自洽）"
+    action: NORMALIZE_AND_EXCLUDE_INVALID
+    merged_from: ["PD015@1.1", "PD016@1.1"]
+    description: >-
+      两阶段标识符治理。阶段一（清洗）：对个体号/父号/母号执行脏数据归一——
+      去除前后空白、全角转半角、压缩内部多余空白属于无歧义规范化并记录 change_log；
+      规范化后发生 ID 冲突、或违反任务明示的编码约束时，剔除涉及记录及受影响后代；
+      不仅因 ID 样式不同就跨任务判错。
+      阶段二（校验）：同世代内翅号应唯一、编码规则应自洽（长度、字符集、前缀）；
+      提供独立翅号列则校验该列，否则退化校验个体号；无世代列时降级为全局编码
+      自洽检查并在报告中声明。编码自洽按"同世代内个体号模式签名一致性"判定。
+    authoritative_source: "系谱核查方案_WT.md#2.1 完整度（翅号唯一/编码格式自洽）；#2.2 常规错误（脏数据：前后空格/全角/大小写不一致）"
+
+  PD004:
+    name: "自交 / 自身作亲本（self-parenting）"
+    action: EXCLUDE_RECORD_AND_DESCENDANTS
+    merged_from: ["PD004@1.1"]
+    description: >-
+      个体号与父号或母号相同，剔除该个体及其全部后代；保留其父母和兄弟姐妹，
+      除非这些个体自身另有独立错误。
+  PD005:
+    name: "亲本存在性（无效引用剔除）"
+    action: EXCLUDE_DEPENDENT_RECORDS
+    merged_from: ["PD005@1.1"]
+    description: >-
+      非缺失父号/母号在系谱个体集中无对应记录时，剔除引用该亲本的子代记录，
+      并级联剔除受影响后代。不得把记录缺失的亲本自动认定为真实基础群。
+    unknown_parent_policy: "exclude_dependent_record"
+
+  PD006:
+    name: "亲本角色冲突与性别一致性"
+    action: EXCLUDE_CONFLICTING_RECORDS
+    merged_from: ["PD006@1.1"]
+    description: >-
+      仅对已指定的猪、鸡、牛、羊任务，按物种繁殖角色及可靠性别字段检查。发现冲突时，
+      剔除冲突个体记录及受影响后代；不得猜测性别或改写亲本关系。无适用字段则注明跳过。
+
+  PD007:
+    name: "循环系谱检测（环检测）"
+    action: EXCLUDE_CYCLE_AND_DESCENDANTS
+    merged_from: ["PD007@1.1"]
+    description: >-
+      先输出完整环路径，再剔除环上个体并级联剔除其后代；保留其父母、兄弟姐妹及
+      无关分支。最终保留系谱必须无环。
+  PD008:
+    name: "世代/日期时序一致性"
+    action: EXCLUDE_INVALID_RECORDS
+    merged_from: ["PD008@1.1", "PD018@1.1"]
+    description: >-
+      只有任务明确声明 pedigree_generation_semantics=genetic_generation 时，才检查
+      遗传世代关系；亲本世代不早于子代时剔除个体及其后代。管理世代/批次不用于
+      该判断。出生日期按任务配置的范围与亲子顺序检查。
+  PD009:
+    name: "系谱拓扑排序与遗传世代分层"
+    action: MODIFY
+    merged_from: ["PD009@1.1"]
+    description: >-
+      输出前按有向图拓扑序重排，保证任一个体双亲出现在其之前（HIBLUP 对系谱
+      顺序有强制要求）。遗传世代 = max(父本世代, 母本世代) + 1，与按配种批次
+      划分的管理世代可能存在偏差，报告中须声明。
+
+  PD010:
+    name: "系谱完整度与晚世代未知亲本"
+    action: EXCLUDE_LATE_UNKNOWN_PARENT_RECORDS_AND_FLAG
+    merged_from: ["PD010@1.1", "PD020@1.1"]
+    description: >-
+      系谱拓扑深度晚于 late_founder_generation 时，任一未知亲本构成记录级错误；
+      剔除该个体及其后代。按系谱推导拓扑深度，不使用管理世代/批次。父母完整率
+      等其他群体指标按世代、批次、性别及父系家系统计报告。
+  PD011:
+    name: "幻影亲本组检测（phantom parent group）"
+    action: WARNING
+    merged_from: ["PD011@1.1"]
+    description: >-
+      PBLUP 系谱中不应包含幻影亲本组个体。检出疑似幻影组时提醒先清理，
+      不自动删除。
+    phantom_patterns: ["^PG", "^phantom", "^幻影"]
+
+  PD012:
+    name: "近交系数（Wright's F）核查"
+    action: FLAG
+    merged_from: ["PD012@1.1"]
+    description: >-
+      基于系谱计算个体近交系数 F，标记 F ≥ inbreeding_flag_threshold 的个体，
+      并报告群体平均近交系数；阈值已对齐育种方案（WT 建议 0.0375），仅提示
+      不排除个体。
+    inbreeding_flag_threshold: 0.0375   # 对齐 WT 初设 0.0375（原 0.125 过松，会漏标中高近交个体）
+    compute_inbreeding: true
+    authoritative_source: "系谱核查方案_WT.md#四、待确认参数（近交系数初设 0.0375，实际以育种方案为准）"
+
+  PD013:
+    name: "最小有效系谱规模"
+    action: BLOCK
+    merged_from: ["PD013@1.1"]
+    description: >-
+      有效系谱个体数低于任务准入配置时阻断。该阈值服务于具体分析目的与数据规模，
+      不表示低于某固定规模就无法构建 A 矩阵。
+    min_individuals: 50
+
+  PD014:
+    name: "遗传世代定义与一致性"
+    action: EXCLUDE_CONFLICTING_RECORDS_AND_DESCENDANTS
+    merged_from: ["PD014@1.1"]
+    description: >-
+      只有任务明确声明遗传世代字段时，才比较显式世代与拓扑亲子关系；亲本遗传世代
+      不早于子代时剔除问题个体及其所有后代。管理世代和批次不参与。世代定义、冲突
+      清单和影响范围写入报告。
+  PD015:
+    name: "血缘中断 / 链追溯（可查询性）"
+    action: FLAG
+    merged_from: ["PD019@1.1"]
+    description: >-
+      对最近 3–5 世代个体，分别沿父系链与母系链向上递归追溯，分类终点
+      （合法基础群 / 记录缺失 / 断链），汇总父系链完整率、母系链完整率、
+      平均链长、断链个体清单。合法双亲未知个体保留；有亲本 ID 但缺失亲本记录时，
+      按 PD005 剔除相关子代，不能补记为真实基础群。
+    recent_generations: 5
+    authoritative_source: "系谱核查方案_WT.md#2.3 可查询性（最近 1-2 世代链追溯）"
+
+# ---------------------------------------------------------------------------
+# 处理前后统计（强制项）
+# ---------------------------------------------------------------------------
+statistics:
+  metrics:
+    - Individuals
+    - DuplicateIDs
+    - KnownSireRate
+    - KnownDamRate
+    - BothParentsKnownRate
+    - SelfAsParent
+    - SexConflicts
+    - TimeConflicts
+    - CyclicRecords
+    - FounderCount
+    - MaxGenerationDepth
+    - MeanInbreeding
+    - FinalValidIndividuals
+    - PaternalChainCompletenessRate
+    - MaternalChainCompletenessRate
+    - MeanChainLength
+    - BreakChainCount
+  before_after_comparison: true

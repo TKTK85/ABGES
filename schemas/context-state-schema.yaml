@@ -1,0 +1,18 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+title: ABGES context checkpoint
+type: object
+required: [run_id, updated_at, objective, current_stage, status, constraints, decisions, artifacts, risks, next_action]
+properties:
+  run_id: {type: string, minLength: 1}
+  updated_at: {type: string, format: date-time}
+  objective: {type: string, minLength: 1, maxLength: 2000}
+  current_stage: {type: string}
+  status: {enum: [initialized, running, completed, partial, failed, blocked]}
+  model_id: {type: [string, "null"]}
+  constraints: {type: array, items: {type: string}, maxItems: 50}
+  decisions: {type: array, items: {type: object}, maxItems: 100}
+  gates: {type: object, additionalProperties: true}
+  artifacts: {type: array, items: {type: object}, maxItems: 200}
+  risks: {type: array, items: {type: object}, maxItems: 100}
+  next_action: {type: string, maxLength: 2000}
+additionalProperties: false

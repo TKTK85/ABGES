@@ -1,0 +1,27 @@
+# Runtime dependencies for the ABGES orchestration layer.
+# ---------------------------------------------------------------
+# Version ranges are intended for the supported Python environment;
+# 精确锁定版本见 requirements.lock（CI 以 --require-hashes 安装）。
+# ---------------------------------------------------------------
+PyYAML>=6.0,<7
+pandas>=2.0,<4
+numpy>=1.24,<3
+pypinyin>=0.49,<1
+mcp>=2,<3
+# 第09交付阶段生成公文格式 Word 结果报告（*_报告.docx）。
+# 缺失时降级为仅输出 Markdown 报告，不阻断评估主流程（SKILL 09 §6.1）。
+python-docx>=1.0,<2
+# 数据探索模块（tools/Python/abges_explore.py）的
+# 分布检验（Shapiro-Wilk / Kolmogorov-Smirnov）与共线性诊断需要。
+# 缺失时自动降级：跳过分布检验与共线性诊断并记 warning。
+scipy>=1.10,<2
+# ---------------------------------------------------------------
+# 以下三项此前实际被 import，但未在 requirements 中声明（依赖缺口）：
+#   · matplotlib  → runners/report_figures.py（五张学术图 + 四张探索图）
+#   · chardet     → tools/Python/abges_core.py:178（编码探测兜底）
+#   · openpyxl    → tools/Python/abges_dataio.py:68（pd.ExcelFile，Excel 是本项目主要输入）
+# openpyxl 按【硬依赖】声明：Excel 缺失会直接阻断主流程，不属于软依赖。
+# ---------------------------------------------------------------
+matplotlib>=3.7,<4
+chardet>=5.0,<8
+openpyxl>=3.1,<4

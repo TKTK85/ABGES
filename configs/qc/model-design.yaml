@@ -1,0 +1,15 @@
+version: "1.0"
+updated: "2026-10-24"
+
+fixed_effects:
+  sparse_group_minimum_n: 5
+  sparse_group_action: pass_with_warning
+  rank_diagnostic_max_columns: 500
+  rank_failure_action: block
+  rank_unevaluated_action: block
+
+connectedness:
+  generation_column_tokens: [Gen, Generation, 世代]
+  batch_column_tokens: [Batch, 批次, 批号]
+  method: bipartite_observed_cell_graph
+  disconnected_action: block

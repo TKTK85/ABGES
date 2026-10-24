@@ -1,0 +1,201 @@
+# ABGES SSGBLUP 模型配置
+# 单步基因组最佳线性无偏预测（Single-Step Genomic BLUP）
+# 执行者：skills/07-geneval-execution -> tools/HIBLUP
+# 版本：1.0.0
+
+meta:
+  model_id: ssblup
+  name: 单步基因组BLUP
+  version: "1.0.0"
+  updated: "2026-08-07"
+  engine: hiblup
+  description: 系谱 A 矩阵与基因组 G 矩阵融合为 H 矩阵，同时利用已测型与未测型个体信息
+  inherits: pblup
+
+# ---------------------------------------------------------------
+# 一、数据需求（三者缺一不可）
+# ---------------------------------------------------------------
+requires:
+  phenotype: true
+  pedigree: true
+  genotype: true
+inputs:
+  phenotype:
+    format: tsv
+    encoding: utf-8
+    id_column_index: 1
+    missing_token: "NA"
+  pedigree:
+    format: csv
+    header: ["ID", "Sire", "Dam"]
+    missing_token: "0"
+  genotype:
+    format: plink_binary
+    qc_config: configs/qc/genotype-qc.yaml
+    must_pass_qc: true
+
+# ---------------------------------------------------------------
+# 二、模型结构
+#   y = mu + 固定效应 + 协变量 + H 矩阵加性效应 + e
+# ---------------------------------------------------------------
+model:
+  formula_template: "{trait} = 1 + {fixed_effects} + {covariates} + PA(R[H]) + e"
+  random_effects:
+    - name: PA
+      type: single_step_additive
+      relationship: H
+      hiblup_flag: "--add"
+  fixed_effect_source: configs/qc/phenotype-qc.yaml#fixed_effect_cols
+  permanent_environment:
+    enabled: false
+    hiblup_flag: "--rand"
+
+# H 矩阵参数（实测口径：HIBLUP 用单一 --alpha 控制 G 与 A22 的混合）
+h_matrix:
+  alpha: 0.05                # HIBLUP --alpha，G 与 A22 的融合权重
+  hiblup_flag: "--alpha"
+  valid_range: [0.0, 1.0]
+  blend_note: >-
+    HIBLUP 同时收到 --pedigree 与 --bfile 时进入单步分支，H 矩阵由 --alpha 控制融合；
+    本引擎不接受 omega/tau 两参数形式。alpha 若需调整须由 planner 显式给出并写入 audit。
+
+# ---------------------------------------------------------------
+# 三、HIBLUP 调用参数
+# ---------------------------------------------------------------
+hiblup:
+  binary: tools/HIBLUP/hiblup.exe
+  analysis_flag: "--single-trait"
+  vc_method: AI
+  max_iter: 30
+  em_max_iter: 200
+  tolerance: 1.0e-6
+  threads: auto
+  threads_cap: 16
+  timeout: 10800      # 单步分析最耗时，超时放宽至 3 小时
+  extra_args: []
+
+  arg_map:
+    phenotype_file: "--pheno"
+    trait_position: "--pheno-pos"
+    discrete_covariate: "--dcovar"
+    quantitative_covariate: "--qcovar"
+    pedigree_file: "--pedigree"
+    genotype_prefix: "--bfile"
+    alpha: "--alpha"               # 单步 H 矩阵融合权重
+    code_method: "--code-method"
+    snp_weight: "--snp-weight"
+    external_grm: "--xrm"          # 提供已构建 H 矩阵时改走此参数
+    additive: "--add"
+    vc_method: "--vc-method"
+    tolerance: "--tol"
+    ai_max_iter: "--ai-maxit"
+    em_max_iter: "--em-maxit"
+    threads: "--threads"
+    output_prefix: "--out"
+
+  code_method: 1
+
+  token_rules:
+    per_trait_token: true
+    empty_token: "0"
+    within_token_separator: ","
+
+  # 走 --bfile 时输出带 _ad 后缀；走 --xrm 时无后缀，解析须两种都探测
+  output_suffix: "_ad"
+  output_suffix_fallback: ""
+
+  command_template: >-
+    hiblup.exe --single-trait --pheno {pheno} --pheno-pos {pos}
+    --dcovar {dcovar} --pedigree {ped} --bfile {geno_prefix}
+    --alpha {alpha} --code-method 1 --threads {threads} --add
+    --vc-method {vc} --tol {tol} --ai-maxit {maxit} --out {out}
+
+  path_constraints:
+    - "--xrm 传绝对路径时须转为相对于输出目录的相对路径，避免盘符冒号被误解析"
+    - 路径不得含空格与非 ASCII 字符
+
+standardization:
+  single_trait: none
+  multi_trait: none         # 2026-10-12 由 zscore 修订：多性状不标准化，保持原始量纲
+
+# ---------------------------------------------------------------
+# 四、执行前置校验
+# ---------------------------------------------------------------
+preflight:
+  - id: E020
+    check: 目标性状有效记录数达到 validation/analysis-policy.yaml#quality_gates.phenotype_min_valid_records
+  - id: E021
+    check: 表型 ID 与系谱 ID 交集达到 validation/analysis-policy.yaml#quality_gates.phenotype_pedigree_min_overlap
+  - id: E026
+    check: 有表型且有基因型的个体数达到 validation/analysis-policy.yaml#quality_gates.phenotype_genotype_min_overlap
+  - id: E027
+    check: 质控后位点数达到 validation/analysis-policy.yaml#quality_gates.genotype_min_snps
+  - id: E028
+    check: 基因型个体必须全部出现在系谱中
+    action: 不自动补造基础群；缺失个体需先核实并补入真实系谱，否则阻断
+    message: 单步分析要求基因型个体是系谱子集，否则 A22 无法构建
+  - id: E022
+    check: 每个固定效应列水平数 ≥ 2
+    action: 自动剔除单水平列并告警
+  - id: E023
+    check: 列名与水平值均为 ASCII
+    action: 触发 sanitize_pheno_for_hiblup
+  - id: E024
+    check: 目标性状方差 > 0
+  - id: E025
+    check: 系谱无环
+
+# ---------------------------------------------------------------
+# 五、结果解析与合理性判定
+# ---------------------------------------------------------------
+outputs:
+  # 实际文件名 = {out}{output_suffix}{suffix}
+  files:
+    - suffix: ".vars"
+      required: true
+    - suffix: ".rand"
+      required: true
+    - suffix: ".beta"
+      required: true
+    - suffix: ".log"
+      required: true
+  suffix_probe_order: ["_ad", ""]
+  parse:
+    heritability_from: ".vars"
+    ebv_from: ".rand"
+    ebv_column: PA
+    fixed_effect_from: ".beta"
+
+sanity_check:
+  heritability:
+    valid_range: [0.0, 1.0]
+    warn_below: 0.01
+    warn_above: 0.80
+  standard_error:
+    warn_ratio: 0.5
+  convergence:
+    require_converged: true
+    on_not_converged:
+      - 回退 AI -> EM 重试一次
+      - 调整 omega 至 0.10 重试一次（记录到 audit）
+      - 仍未收敛判定 partial
+  cross_model_reference:
+    compare_with: [pblup, gblup]
+    warn_if_h2_diff_gt: 0.20
+    expectation: SSGBLUP 预测准确性通常介于或优于 PBLUP 与 GBLUP
+
+fallback:
+  - trigger: A22 构建失败
+    action: 检查基因型个体是否全在系谱内，判定 failed
+  - trigger: HIBLUP 非零退出码
+    action: 保留原始日志，判定 failed
+  - trigger: 超时
+    action: 终止并记录，判定 failed
+
+honesty_contract:
+  allowed_status: [completed, partial, failed]
+  completed_requires:
+    - 退出码为 0
+    - 四件输出齐全
+    - 收敛标志为真
+    - 遗传力落在 valid_range

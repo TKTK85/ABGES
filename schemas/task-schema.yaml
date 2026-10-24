@@ -1,0 +1,234 @@
+# ABGES 任务契约
+# 定义一次遗传评估任务的完整输入描述，harness/entrypoint 接收并校验
+# 版本：1.0.0
+
+meta:
+  schema_id: task-schema
+  version: "1.2.0"
+  updated: "2026-10-24"
+
+task:
+  required_fields:
+    - name: task_id
+      type: string
+      desc: 任务标识，未提供时由系统按 {stem}_{timestamp} 生成
+
+    - name: command
+      type: enum
+      allowed_values: [validate, plan, run, status]
+      desc: 执行模式，见 system-policies#interface
+
+    - name: inputs
+      type: object
+      desc: 数据输入清单
+      fields:
+        - name: phenotype
+          type: path
+          required: true
+          desc: 表型文件路径（xlsx/csv/txt）
+        - name: pedigree
+          type: path
+          required: false
+          desc: 系谱文件路径
+        - name: genotype
+          type: path
+          required: false
+          desc: 基因型文件前缀或 VCF 路径
+        - name: egg_record
+          type: path
+          required: false
+          desc: 捡蛋明细记录，计算 ACL/MCL/CEN 时需要
+        - name: validation
+          type: path
+          required: false
+          desc: 独立验证群文件；包含 ID 和模型尺度校正后的验证表型，不得参与本次拟合
+
+    - name: traits
+      type: list[string]
+      required: true
+      desc: 目标性状代码列表，须在 trait-registry 中登记
+      constraints:
+        min_items: 1
+        max_items: 5
+
+  optional_fields:
+    - name: task_name
+      type: string
+      desc: 可选的工作区任务目录名；不提供时使用 task_id
+    - name: gateway_context
+      type: object
+      desc: MCP/Harness 网关写入的审计上下文
+    - name: recommend_decisions
+      type: list[object]
+      desc: 断点恢复时提交的人工决策
+    - name: baseline_tolerance
+      type: number
+      desc: 历史基线对照的允许差异
+    - name: fixed_effect_level_map
+      type: object
+      desc: 固定效应类别水平的显式英文映射
+    - name: model
+      type: enum
+      allowed_values: [pblup, gblup, ssgblup, ssblup, auto]
+      default: auto
+      desc: auto 时由 planner 依 model-registry#selection_rules 决策
+
+    - name: fixed_effects
+      type: list[string]
+      desc: 显式指定固定效应列；未指定时由 planner 从候选中筛选
+      note: 单水平列会被 E022 自动剔除并告警
+
+    - name: covariates
+      type: list[string]
+      desc: 显式指定连续协变量列
+
+    - name: species
+      type: string
+      desc: 物种描述标签；系谱准入以有性生殖及父母本关系为准，不按物种白名单限制
+
+    - name: pedigree_generation_semantics
+      type: enum
+      allowed_values: [genetic_generation, management_generation, unspecified]
+      default: unspecified
+      desc: >-
+        声明系谱 Gen 列语义。只有 genetic_generation 启用显式亲子世代关系硬剔除；
+        管理世代/批次不用于该判断。晚世代未知亲本另按系谱拓扑深度及
+        late_founder_generation 检查，不读取 Gen 或批次。
+
+    - name: late_founder_generation
+      type: integer
+      default: 0
+      desc: >-
+        按系谱推导的拓扑深度中允许出现未知亲本的最大深度。超过该深度仍有
+        未知亲本时剔除个体及其后代；不依赖 Gen 字段语义或管理批次。
+
+    - name: genetic_reporting
+      type: object
+      desc: 遗传趋势与参考群口径；不给默认参考群
+      fields:
+        generation_semantics: [genetic_generation, birth_cohort, management_period, unspecified]
+        reference_column: string
+        reference_value: string_or_number
+        minimum_n: integer (default 30)
+
+    - name: selection_scenario
+      type: object
+      desc: 可选假设选种情景；不得解释为实际选种决策
+      fields:
+        candidate_ids: list[string]
+
+    - name: generation_interval
+      type: number
+      desc: 仅用于计算假设遗传进展；不提供时不计算 ΔG
+
+    - name: validation_adjusted_columns
+      type: object
+      desc: 性状代码到独立验证文件中校正表型列名的映射
+
+    - name: validation_min_n
+      type: integer
+      default: 30
+      desc: 独立验证最低配对样本数；不足时只报告样本不足
+
+    - name: multi_trait
+      type: boolean
+      default: false
+      desc: 为真时启用多性状分析；表型不标准化，各性状保持原始量纲（PH007）
+
+    - name: permanent_environment
+      type: boolean
+      default: false
+      desc: >-
+        O4：为真时拟合永久环境效应（--rand 1），适用于产蛋数等重复测定性状。
+        前提：表型同一 ID 出现多行；单条记录性状声明该项会被 E013 阻断。
+
+    - name: pre_standardized
+      type: object
+      desc: >-
+        声明表型输入中哪些性状已由上游完成标准化（列中存放的是无量纲 z 值）。
+        被声明的性状：由 phenotype-qc#PH006 依 skip_when_pre_standardized 决定
+        判定尺度（已删除的 PH006.standardized_value_range 机制不再使用）。
+        声明只修正判定尺度，不取消任何规则；每次生效都会写入 change_log
+        与交付报告的告警清单，禁止静默放行。
+        未声明时按原始观测值处理，行为与既往完全一致。
+      fields:
+        - name: traits
+          type: list[string]
+          desc: 已标准化的性状代码，如 ["ACL", "EN", "ER"]
+        - name: scope
+          type: list[string]
+          desc: 标准化分组字段，如 ["Batch", "Gen"]；仅作审计记录
+        - name: method
+          type: string
+          desc: 标准化方法，如 "z-score"；仅作审计记录
+      declaration_audit_required: true
+
+    - name: engine_params
+      type: object
+      desc: 引擎参数覆盖，任何覆盖都必须写入审计
+      fields:
+        - vc_method: enum[AI, EM, EMAI, HI, HE]
+        - tolerance: float
+        - max_iter: int
+        - em_max_iter: int
+        - threads: int
+        - reliability: bool       # 默认 true：默认附加 --r2，产出逐个体 PEV/SE/R2
+                                  # HIBLUP v1.7.0 起 PEV/R2 并入 .rand（列 PA_PEV/PA_R2），
+                                  # 不再单独产出 .r2/.pev；如需关闭显式置 false（引擎不附加 --r2）
+        - extra_args: list[string]
+        - timeout: int
+        - step_size: int          # O5：--step 分块参数，大任务降内存
+        - keep_file: path         # O7：--keep 个体 ID 列表文件
+        - remove_file: path       # O7：--remove 个体 ID 列表文件（与 keep 互斥）
+        - use_grm_cache: bool     # O2：GBLUP 同品系 GRM 预构建缓存
+        - strain_id: string       # O2：品系标识，缺省从 task_id 前缀推导
+        - grm_matrix_type: enum[GA, GD, GAD, HA, HD, HAD]  # O2/O9
+      override_audit_required: true
+
+    - name: output_dir
+      type: path
+      default: workspace/output
+      desc: 结果输出目录，须位于 D 盘
+
+    - name: output_format
+      type: list[enum]
+      allowed_values: [markdown, xlsx, docx, engine_outputs]
+      default: [markdown, xlsx, docx, engine_outputs]
+      desc: 对外交付格式；运行 JSON、checkpoint 和日志始终属于内部审计文件
+
+    - name: baseline
+      type: path
+      desc: 历史基线结果路径，提供时 08-validator 执行回归对照
+
+# ---------------------------------------------------------------
+# 任务校验（entrypoint 接收后立即执行，不通过则直接返回 failed）
+# ---------------------------------------------------------------
+validation:
+  - command 取值合法
+  - phenotype 路径存在且可读
+  - pedigree/genotype 若提供则路径存在
+  - traits 非空且全部在 trait-registry 中登记
+  - model 显式指定时，其 requires 与实际提供的数据一致
+  - output_dir 可写且不在 C 盘
+  - multi_trait 为真时 traits 数量 ≥ 2
+  - pre_standardized.traits 若提供，其元素须全部在 trait-registry 中登记
+
+# ---------------------------------------------------------------
+# 示例
+# ---------------------------------------------------------------
+example:
+  task_id: SAMPLE_POPULATION_ACL_PBLUP
+  command: run
+  inputs:
+    phenotype: "D:/data/SAMPLE_POPULATION_pheno.xlsx"
+    pedigree: "D:/data/SAMPLE_POPULATION_pedigree.xlsx"
+  traits: ["ACL"]
+  model: pblup
+  fixed_effects: ["Gen", "Batch"]
+  engine_params:
+    vc_method: AI
+    tolerance: 1.0e-6
+    max_iter: 30
+    threads: 16
+  output_dir: "D:/abges_output"
+  output_format: [markdown, xlsx, docx, engine_outputs]

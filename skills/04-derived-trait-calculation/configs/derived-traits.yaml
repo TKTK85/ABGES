@@ -1,0 +1,141 @@
+# ABGES 衍生性状定义 (Derived Traits)
+# 原则：Agent 负责判断"是否需要计算"，Tool 负责"真正计算"。
+# 大模型不得临时发明正式分析公式；任何新增/修改公式必须走人工确认并升版本。
+#
+# 两类衍生性状：
+#   formula 型  —— 由同一行的基础性状按算术公式直接计算
+#   record 型   —— 需要聚合明细记录（如逐日捡蛋记录）后计算，由专用算法实现
+
+version: "1.0"
+updated: "2026-08-07"
+
+derived_traits:
+
+  # -------------------------------------------------------------------------
+  # record 型：基于逐日捡蛋记录计算的连产性状
+  # -------------------------------------------------------------------------
+  - trait_id: ACL
+    name_cn: 平均连产长度
+    type: derived
+    compute_kind: record
+    algorithm: clutch
+    source: egg_records
+    description: >-
+      连产(clutch)定义为连续产蛋的天数序列，遇到停产日(未产蛋)即中断。
+      ACL = 所有连产长度之和 / 连产次数。仅统计区间内有效捡蛋记录参与计算。
+    required_inputs:
+      - egg_record_id
+      - egg_record_date
+    min_records: 1
+    validation:
+      - "ACL >= 1"
+      - "ACL <= 100"
+    unit: "枚/连产"
+    version: "1.0"
+
+  - trait_id: MCL
+    name_cn: 最大连产长度
+    type: derived
+    compute_kind: record
+    algorithm: clutch
+    source: egg_records
+    description: >-
+      MCL = 该个体所有连产序列中最长的一段的长度。与 ACL 由同一算法一次性产出。
+    required_inputs:
+      - egg_record_id
+      - egg_record_date
+    min_records: 1
+    validation:
+      - "MCL >= 1"
+      - "MCL >= ACL"
+    unit: "枚"
+    version: "1.0"
+
+  - trait_id: NCC
+    name_cn: 连产周期数
+    type: derived
+    compute_kind: record
+    algorithm: clutch
+    source: egg_records
+    description: >-
+      该个体有多少个连产段（每个连产算1个周期）。与 ACL/MCL 由同一算法一次性产出。
+    required_inputs:
+      - egg_record_id
+      - egg_record_date
+    min_records: 1
+    validation:
+      - "NCC >= 1"
+      - "NCC <= 200"
+    unit: "周期"
+    version: "1.0"
+
+  - trait_id: CEN
+    name_cn: 累计产蛋数
+    type: derived
+    compute_kind: record
+    algorithm: cumulative_egg_number
+    source: egg_records
+    description: >-
+      CEN = 统计区间内该个体捡蛋记录的去重日期计数（同一天多条记录按一天计）。
+    required_inputs:
+      - egg_record_id
+      - egg_record_date
+    min_records: 1
+    validation:
+      - "CEN >= 0"
+      - "CEN <= 400"
+    unit: "枚"
+    version: "1.0"
+
+  # -------------------------------------------------------------------------
+  # formula 型：由基础性状按公式计算
+  # -------------------------------------------------------------------------
+  - trait_id: FCR
+    name_cn: 料重比
+    type: derived
+    compute_kind: formula
+    required_traits:
+      - FI
+      - WG
+    formula: "FI / WG"
+    description: "料重比 = 采食量 / 增重。分母为 0 或缺失时不计算，记为无法计算。"
+    guards:
+      - "WG > 0"
+    validation:
+      - "FCR > 0"
+      - "FCR <= 10"
+    unit: "g/g"
+    version: "1.0"
+
+# ---------------------------------------------------------------------------
+# 捡蛋记录字段识别（record 型衍生性状的输入解析规则）
+# ---------------------------------------------------------------------------
+egg_record_schema:
+  # 顺序即优先级：靠前者优先选用（由 _detect_egg_columns 按本表顺序匹配）。
+  # 必须把「全局唯一个体号」排在「场内短号」之前——捡蛋记录常同时含翅号与
+  # 完整个体号两列；翅号仅在场内批次内唯一，跨批次会碰撞，选中它将无法与
+  # 系谱/表型的 ID 对接（SAMPLE_POPULATION 实测：选翅号导致与表型 ID 匹配 0 条）。
+  id_aliases: ["个体号", "个体编号", "ID", "id", "翅号", "鸡号"]
+  date_aliases: ["采集时间", "采集日期", "捡蛋日期", "产蛋日期", "日期", "date", "Date"]
+  # 宽表模式：一行一个体，多列为日期
+  wide_format_supported: true
+  date_column_pattern: "^\\d{4}[-/年]?\\d{1,2}[-/月]?\\d{1,2}"
+  # 宽表中标记"当日产蛋"的取值
+  positive_values: [1, "1", "√", "有", "Y", "y", "T", "true"]
+
+# ---------------------------------------------------------------------------
+# 算法定义
+# ---------------------------------------------------------------------------
+algorithms:
+  clutch:
+    name: 连产性状算法
+    decision_table:
+      - {same_day_count: ">=3", action: discard_day}
+      - {same_day_count: "==2", prev_has_record: true,  action: keep_first_delete_second}
+      - {same_day_count: "==2", prev_has_record: false, action: forward_gap_search}
+      - {same_day_count: "==1", action: keep}
+    outputs: [ACL, MCL, NCC, double_egg_days]
+    description: >-
+      v2算法（条件判断+前向搜索）：
+      同日>=3条→全天丢弃；同日=2条→前一天有记录则保留第一条，否则前向搜索最近空档平移；
+      同日=1条→直接保留。

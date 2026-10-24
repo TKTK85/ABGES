@@ -1,0 +1,128 @@
+# ABGES Agent 输出契约
+# 每个 Agent 完成阶段工作后必须返回符合本契约的结构，由 harness/state-manager 校验
+# 版本：1.0.0
+
+meta:
+  schema_id: agent-output-schema
+  version: "1.0.0"
+  updated: "2026-08-07"
+  applies_to: 全部 10 个 Agent
+
+output:
+  required_fields:
+    - name: agent_id
+      type: string
+      desc: Agent 编号，如 "01"
+
+    - name: stage
+      type: string
+      desc: 所处阶段名，如 phenotype_qc / integration / execution
+
+    - name: status
+      type: enum
+      allowed_values: [completed, partial, failed]
+      desc: 三态诚实交付，禁止模糊表述
+      rules:
+        completed: 本阶段全部检查通过，无未处理告警
+        partial: 主体产出可用，但存在已声明的告警或降级
+        failed: 无法产出可用结果，必须给出阻断原因
+
+    - name: timestamp_start
+      type: datetime
+    - name: timestamp_end
+      type: datetime
+
+    - name: inputs_used
+      type: list[object]
+      desc: 实际读取的文件
+      fields: [path, checksum, rows, cols]
+
+    - name: outputs_produced
+      type: list[object]
+      desc: 实际生成的文件，路径必须真实存在
+      fields: [path, type, size_bytes, desc]
+      verification: 返回前必须逐个确认文件存在，否则视为虚报
+
+    - name: statistics
+      type: object
+      desc: 处理前后统计，涉及数据增删改时必需
+      fields:
+        before: object
+        after: object
+        delta: object
+
+    - name: warnings
+      type: list[object]
+      fields: [code, message, affected_count, action_taken, requires_review]
+      desc: 每条告警必须说明影响范围与已采取的处理
+
+    - name: errors
+      type: list[object]
+      fields: [code, message, blocking]
+
+    - name: gate_results
+      type: list[object]
+      desc: 本阶段触发的闸门判定
+      fields: [gate_id, check_id, verdict, actual, threshold]
+
+  optional_fields:
+    - name: next_suggestion
+      type: string
+      desc: 给 Supervisor 的下一步建议，不具强制力
+
+    - name: human_summary
+      type: string
+      desc: 中文自然语言摘要，供人机通道输出
+
+    - name: assumptions
+      type: list[string]
+      desc: 本阶段采用的假设，必须显式声明
+
+# ---------------------------------------------------------------
+# 硬性约束
+# ---------------------------------------------------------------
+constraints:
+  - status 为 completed 时，errors 必须为空且无 blocking 告警
+  - outputs_produced 中的每个路径必须真实存在且可读
+  - 数据行数发生变化时 statistics 不得为空
+  - warnings 非空时不得省略 action_taken
+  - requires_review=true 时最终交付状态不得为 completed
+  - 任何自动决策（剔除列、转码、系谱记录剔除或亲本值归一）必须出现在 warnings 或 assumptions 中；不得补造缺失系谱个体或亲本
+  - 禁止返回未经实际执行的推测性结果
+
+# ---------------------------------------------------------------
+# 示例
+# ---------------------------------------------------------------
+example:
+  agent_id: "01"
+  stage: phenotype_qc
+  status: partial
+  timestamp_start: "2026-08-07T15:20:11"
+  timestamp_end: "2026-08-07T15:20:19"
+  inputs_used:
+    - path: "D:/data/SAMPLE_POPULATION_pheno.xlsx"
+      checksum: "d41d8cd98f00b204e9800998ecf8427e"
+      rows: 200
+      cols: 12
+  outputs_produced:
+    - path: "workspace/intermediate/SAMPLE_POPULATION_pheno_std_20260807_152019.txt"
+      type: tsv
+      size_bytes: 4096
+      desc: 标准化表型表
+  statistics:
+    before: {n_records: 200, n_missing_ACL: 5207}
+    after: {n_records: 200, n_valid_ACL: 48}
+    delta: {n_removed: 0, n_marked_outlier: 12}
+  warnings:
+    - code: PH004
+      message: ACL 存在 12 条超出生物学合理区间的记录
+      affected_count: 12
+      action_taken: 标记为 NA 并列入清单，未删除原始行
+  errors: []
+  gate_results:
+    - gate_id: G2
+      check_id: G2-02
+      verdict: pass
+      actual: 48
+      threshold: 100
+  human_summary: 表型质控完成，有效 ACL 记录 48 条，12 条越界值已置为缺失并列入清单。

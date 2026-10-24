@@ -1,0 +1,115 @@
+# ABGES 表型数据结构契约
+# 定义标准化表型表的字段规范，01-phenotype-agent 的输出必须符合本契约
+# 版本：1.0.0
+
+meta:
+  schema_id: phenotype-schema
+  version: "1.0.0"
+  updated: "2026-08-07"
+
+# ---------------------------------------------------------------
+# 标准化后表型表结构
+# ---------------------------------------------------------------
+structure:
+  format: dataframe
+  orientation: 一行一条记录（重复记录性状允许同一 ID 多行）
+  encoding: utf-8
+  column_naming: ascii_only          # 列名一律 ASCII，见 system-policies#ascii_sanitization
+
+columns:
+  # ---- 标识列（必需）----
+  - name: ID
+    type: string
+    required: true
+    unique: conditional              # 单次记录性状要求唯一，重复记录性状允许重复
+    description: 个体唯一标识（翅号）
+    constraints:
+      not_null: true
+      strip_whitespace: true
+      preserve_leading_zeros: true   # 前导零必须保留，否则跨表对接失败
+      case_sensitive: true
+
+  # ---- 固定效应列（离散，参与 --dcovar）----
+  - name: Gen
+    type: category
+    required: false
+    description: 世代
+    constraints:
+      min_levels: 2                  # 水平数为 1 时由 E022 剔除
+      ascii_levels: true
+
+  - name: Batch
+    type: category
+    required: false
+    description: 批次
+    constraints:
+      min_levels: 2
+      ascii_levels: true
+
+  - name: Sex
+    type: category
+    required: false
+    description: 性别
+    allowed_values: ["M", "F", "U"]
+    mapping:
+      公: M
+      母: F
+      雄: M
+      雌: F
+      "1": M
+      "2": F
+      "0": U
+      未知: U
+
+  # ---- 连续协变量列（参与 --qcovar）----
+  - name: AFE
+    type: float
+    required: false
+    description: 开产日龄，常作为产蛋性状的协变量
+
+  # ---- 性状列（分析目标）----
+  # 具体性状定义见 configs/traits/trait-registry.yaml
+  - name: "<trait>"
+    type: float
+    required: true
+    description: 目标性状观测值
+    constraints:
+      missing_token: "NA"
+      variance_gt_zero: true         # 方差为零无法估计组分
+
+# ---------------------------------------------------------------
+# 数据类型规范
+# ---------------------------------------------------------------
+dtypes:
+  string: 保持原样，不做数值转换（防前导零丢失）
+  category: 转字符串后作为水平，不参与算术
+  float: 允许 NaN 表示缺失
+  int: 计数类性状（如 EN 产蛋数）
+
+# ---------------------------------------------------------------
+# 引擎输入文件规范（05-data-integration 输出，供 HIBLUP 读取）
+# ---------------------------------------------------------------
+engine_input:
+  filename_pattern: "{task}_pheno_{timestamp}.txt"
+  delimiter: "\t"
+  header: true
+  encoding: utf-8
+  missing_token: "NA"
+  id_column_position: 1              # 必须是第 1 列
+  column_order: [ID, "<fixed_effects...>", "<covariates...>", "<traits...>"]
+  # 性状列序号（1-based）由 planner 计算后传入 --pheno-pos
+  position_indexing: 1-based
+  example_header: "ID\tGen\tBatch\tAFE\tEN\tER\tACL"
+
+# ---------------------------------------------------------------
+# 校验清单（读入与输出各执行一次）
+# ---------------------------------------------------------------
+validation:
+  - 文件可读且非空
+  - 表头存在且列名唯一
+  - ID 列已识别
+  - 所有列名为 ASCII
+  - 所有固定效应水平值为 ASCII
+  - 目标性状为数值型且方差 > 0
+  - 有效记录数 ≥ 100
+  - 缺失值统一为 NA

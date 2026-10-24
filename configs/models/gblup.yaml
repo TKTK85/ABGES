@@ -1,0 +1,190 @@
+# ABGES GBLUP 模型配置
+# 基因组最佳线性无偏预测（Genomic BLUP）
+# 执行者：skills/07-geneval-execution -> tools/HIBLUP
+# 版本：1.0.0
+
+meta:
+  model_id: gblup
+  name: 基因组BLUP
+  version: "1.0.0"
+  updated: "2026-08-07"
+  engine: hiblup
+  description: 使用基因组 G 矩阵替代系谱 A 矩阵进行方差组分估计与育种值预测
+  inherits: pblup   # 未显式覆盖的字段沿用 pblup.yaml
+
+# ---------------------------------------------------------------
+# 一、数据需求
+# ---------------------------------------------------------------
+requires:
+  phenotype: true
+  pedigree: false      # 可选：提供时仅用于校验，不进入模型
+  genotype: true
+inputs:
+  phenotype:
+    format: tsv
+    encoding: utf-8
+    id_column_index: 1
+    missing_token: "NA"
+  genotype:
+    format: plink_binary
+    qc_config: configs/qc/genotype-qc.yaml
+    must_pass_qc: true      # 未通过基因型质控不得进入 GBLUP
+
+# ---------------------------------------------------------------
+# 二、模型结构
+#   y = mu + 固定效应 + 协变量 + 基因组加性效应(G) + e
+# ---------------------------------------------------------------
+model:
+  formula_template: "{trait} = 1 + {fixed_effects} + {covariates} + PA(R[G]) + e"
+  random_effects:
+    - name: PA
+      type: genomic_additive
+      relationship: G
+      hiblup_flag: "--add"
+  fixed_effect_source: configs/qc/phenotype-qc.yaml#fixed_effect_cols
+  permanent_environment:
+    enabled: false
+    hiblup_flag: "--rand"
+
+# ---------------------------------------------------------------
+# 三、HIBLUP 调用参数
+# ---------------------------------------------------------------
+hiblup:
+  binary: tools/HIBLUP/hiblup.exe
+  analysis_flag: "--single-trait"
+  vc_method: AI
+  max_iter: 30
+  em_max_iter: 200
+  tolerance: 1.0e-6
+  threads: auto
+  threads_cap: 16
+  timeout: 7200        # 基因组分析耗时高于 PBLUP，超时放宽至 2 小时
+  extra_args: []
+
+  arg_map:
+    phenotype_file: "--pheno"
+    trait_position: "--pheno-pos"
+    discrete_covariate: "--dcovar"
+    quantitative_covariate: "--qcovar"
+    genotype_prefix: "--bfile"     # GBLUP 关键：传 PLINK 二进制前缀而非系谱
+    code_method: "--code-method"   # 基因型编码方式，默认 1
+    snp_weight: "--snp-weight"     # 可选，SNP 加权文件
+    external_grm: "--xrm"          # 可选，直接提供已构建的关系矩阵前缀
+    additive: "--add"
+    vc_method: "--vc-method"
+    tolerance: "--tol"
+    ai_max_iter: "--ai-maxit"
+    em_max_iter: "--em-maxit"
+    threads: "--threads"
+    output_prefix: "--out"
+
+  code_method: 1
+
+  token_rules:
+    per_trait_token: true
+    empty_token: "0"
+    within_token_separator: ","
+
+  # 关键实测口径：走 --bfile 时 HIBLUP 输出文件名带 _ad 后缀
+  # 例：<out>_ad.vars / <out>_ad.rand / <out>_ad.beta
+  # 但走 --xrm 提供外部矩阵时不加后缀，解析时须两种都探测
+  output_suffix: "_ad"
+  output_suffix_fallback: ""
+
+  command_template: >-
+    hiblup.exe --single-trait --pheno {pheno} --pheno-pos {pos}
+    --dcovar {dcovar} --bfile {geno_prefix} --code-method 1
+    --threads {threads} --add --vc-method {vc} --tol {tol}
+    --ai-maxit {maxit} --out {out}
+
+  # Windows 路径注意事项
+  path_constraints:
+    - "--xrm 传绝对路径时须转为相对于输出目录的相对路径，避免盘符冒号被误解析"
+    - 路径不得含空格与非 ASCII 字符
+
+# G 矩阵参数
+grm:
+  method: VanRaden1
+  center_scale: true
+  missing_genotype_handling: mean_impute
+  built_by: hiblup      # 由 HIBLUP 内部构建，不额外导出
+
+standardization:
+  single_trait: none
+  multi_trait: none         # 2026-10-12 由 zscore 修订：多性状不标准化，保持原始量纲
+
+# ---------------------------------------------------------------
+# 四、执行前置校验
+# ---------------------------------------------------------------
+preflight:
+  - id: E020
+    check: 目标性状有效记录数达到 validation/analysis-policy.yaml#quality_gates.phenotype_min_valid_records
+  - id: E026
+    check: 有表型且有基因型的个体数达到 validation/analysis-policy.yaml#quality_gates.phenotype_genotype_min_overlap
+    message: 既有表型又有基因型的个体过少，GBLUP 无法给出可靠估计
+  - id: E027
+    check: 质控后位点数达到 validation/analysis-policy.yaml#quality_gates.genotype_min_snps
+    message: 有效 SNP 过少，G 矩阵秩不足
+  - id: E022
+    check: 每个固定效应列的水平数 ≥ 2
+    action: 自动剔除单水平列并告警
+  - id: E023
+    check: 列名与水平值均为 ASCII
+    action: 触发 sanitize_pheno_for_hiblup
+  - id: E024
+    check: 目标性状方差 > 0
+
+# ---------------------------------------------------------------
+# 五、结果解析与合理性判定
+# ---------------------------------------------------------------
+outputs:
+  # 实际文件名 = {out}{output_suffix}{suffix}，走 --bfile 时 output_suffix 为 _ad
+  files:
+    - suffix: ".vars"
+      required: true
+    - suffix: ".rand"
+      required: true
+    - suffix: ".beta"
+      required: true
+    - suffix: ".log"
+      required: true
+  suffix_probe_order: ["_ad", ""]
+  parse:
+    heritability_from: ".vars"
+    ebv_from: ".rand"
+    ebv_column: PA
+    fixed_effect_from: ".beta"
+
+sanity_check:
+  heritability:
+    valid_range: [0.0, 1.0]
+    warn_below: 0.01
+    warn_above: 0.80
+  standard_error:
+    warn_ratio: 0.5
+  convergence:
+    require_converged: true
+    on_not_converged:
+      - 回退 AI -> EM 重试一次
+      - 仍未收敛判定 partial
+  # GBLUP 特有：与 PBLUP 结果的一致性参考
+  cross_model_reference:
+    compare_with: pblup
+    warn_if_h2_diff_gt: 0.20
+    note: 同一性状 GBLUP 与 PBLUP 遗传力差异超过 0.20 时提示核查基因型与表型对接
+
+fallback:
+  - trigger: HIBLUP 非零退出码
+    action: 保留原始日志，判定 failed
+  - trigger: 内存不足（大规模 G 矩阵）
+    action: 记录样本数与位点数，建议降采样或增加内存，判定 failed
+  - trigger: 超时
+    action: 终止并记录，判定 failed
+
+honesty_contract:
+  allowed_status: [completed, partial, failed]
+  completed_requires:
+    - 退出码为 0
+    - 四件输出齐全
+    - 收敛标志为真
+    - 遗传力落在 valid_range

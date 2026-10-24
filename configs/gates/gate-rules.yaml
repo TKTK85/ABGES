@@ -1,0 +1,232 @@
+# ABGES 闸门规则
+# 作用：定义各阶段之间的准入判定，由 harness/gatekeeper 强制执行
+# 铁律：闸门不通过则流程中止，Agent 无权绕过
+# 版本：1.0.0
+
+meta:
+  config_id: gate-rules
+  version: "1.1.0"
+  updated: "2026-10-22"
+  owner: harness/gatekeeper
+  enforcement: mandatory     # Agent 不得跳过或降级闸门
+
+# 闸门判定结果三态
+verdicts:
+  pass: 允许进入下一阶段
+  pass_with_warning: 允许进入，但告警必须写入报告且在最终交付中列出
+  block: 中止流程，判定 failed 或 partial，如实告知阻断原因
+
+# ---------------------------------------------------------------
+# G1 数据准入闸门：原始数据读入之后
+# ---------------------------------------------------------------
+gates:
+  - id: G1
+    name: 数据准入闸门
+    stage: after_data_loading
+    owner: 05-data-integration-agent
+    checks:
+      - id: G1-01
+        desc: 至少存在表型数据且可解析
+        on_fail: block
+      - id: G1-02
+        desc: 表型文件行数 > 0 且列数 ≥ 2
+        on_fail: block
+      - id: G1-03
+        desc: 个体 ID 列已识别且唯一（重复 ID 已按 phenotype-qc 规则处理）
+        on_fail: block
+      - id: G1-04
+        desc: 文件编码检测成功（chardet 置信度 ≥ 0.7）
+        on_fail: pass_with_warning
+      - id: G1-05
+        desc: 系谱或基因型至少提供其一
+        on_fail: block
+        message: 无系谱且无基因型，无法构建亲缘关系矩阵
+
+  # -------------------------------------------------------------
+  # G2 质控闸门：QC 完成之后
+  # -------------------------------------------------------------
+  - id: G2
+    name: 质控闸门
+    stage: after_qc
+    owner: [01-phenotype-agent, 02-pedigree-agent, 03-genotype-agent]
+    checks:
+      - id: G2-01
+        desc: 无 error 级质控规则未处理
+        on_fail: block
+      - id: G2-02
+        desc: 质控后表型有效记录数达到 validation/analysis-policy.yaml 配置值
+        on_fail: block
+        message: 有效记录不足 100，方差组分估计不可靠
+      - id: G2-03
+        desc: 质控后剔除比例不超过 validation/analysis-policy.yaml 配置值
+        on_fail: pass_with_warning
+        message: 剔除超过三成记录，须在报告中说明原因
+      - id: G2-04
+        desc: 处理前后统计已完整生成（before/after 各指标非空）
+        on_fail: block
+        message: 缺少处理前后统计违反可追溯铁律
+      - id: G2-05
+        desc: 系谱（若提供）无环且父母性别一致
+        on_fail: block
+      - id: G2-06
+        desc: 基因型（若提供）质控后位点数和个体数达到 validation/analysis-policy.yaml 配置值
+        on_fail: block
+
+  # -------------------------------------------------------------
+  # G3 对接闸门：多源数据整合之后
+  # -------------------------------------------------------------
+  - id: G3
+    name: 数据对接闸门
+    stage: after_integration
+    owner: 05-data-integration-agent
+    checks:
+      - id: G3-01
+        desc: 表型 ID 与系谱 ID 交集达到 validation/analysis-policy.yaml 配置值
+        on_fail: block
+        message: 表型与系谱无法对接，检查 ID 前导零、大小写与空白字符
+      - id: G3-02
+        desc: 交集占表型记录数比例达到 validation/analysis-policy.yaml 配置值
+        on_fail: pass_with_warning
+        message: 两成以上表型个体不在系谱中，这部分个体不会获得可靠 EBV
+      - id: G3-03
+        desc: 基因型 ID（若提供）与表型 ID 交集达到 validation/analysis-policy.yaml 配置值
+        on_fail: block
+      - id: G3-04
+        desc: SSGBLUP 场景下基因型个体全部在系谱内
+        on_fail: block
+        action: 不自动补造系谱个体；先核实 ID 并补齐原始系谱，再重跑
+
+  # -------------------------------------------------------------
+  # G4 建模闸门：进入 HIBLUP 之前
+  # -------------------------------------------------------------
+  - id: G4
+    name: 建模准入闸门
+    stage: before_execution
+    owner: 06-geneval-planner-agent
+    checks:
+      - id: G4-01
+        desc: 模型已从 model-registry 选定且数据满足其 requires
+        on_fail: block
+      - id: G4-02
+        desc: 目标性状列已定位，列序号（1-based）与表头一致
+        on_fail: block
+      - id: G4-03
+        desc: 所有固定效应水平数 ≥ 2（单水平列已剔除，E022）
+        on_fail: block
+      - id: G4-04
+        desc: 表型文件列名与固定效应水平值全为 ASCII（E023）
+        on_fail: block
+        message: 非 ASCII 会触发 HIBLUP v1.7.0 崩溃，必须先完成转码
+      - id: G4-05
+        desc: 目标性状方差 > 0
+        on_fail: block
+      - id: G4-06
+        desc: 单/多性状分析均未做标准化（PH007 合同 none，2026-10-12 修订）
+        on_fail: block
+        message: 违反 PH007 标准化合同
+      - id: G4-07
+        desc: 输出目录存在且可写，输出前缀带时间戳不与既有文件冲突
+        on_fail: block
+      - id: G4-08
+        desc: 检查拟合固定效应的稀疏组；每个水平样本少于 5 时告警并说明影响
+        on_fail: pass_with_warning
+        message: 稀疏固定效应水平可能导致估计不稳定；需结合样本量、组间平衡和业务结构复核
+      - id: G4-09
+        desc: 实际拟合固定效应与协变量设计矩阵须可评估且满列秩
+        on_fail: block
+        message: 设计矩阵秩亏或无法评估，部分效应不可估；应合并/删除冗余因子或补充数据后重跑
+      - id: G4-10
+        desc: 同时拟合世代与批次时检查二部图连通性
+        on_fail: block
+        message: 世代与批次之间缺少遗传/数据连通，跨组比较和趋势解释受限
+
+  # -------------------------------------------------------------
+  # G5 结果闸门：HIBLUP 执行之后
+  # -------------------------------------------------------------
+  - id: G5
+    name: 结果验收闸门
+    stage: after_execution
+    owner: 08-result-validator-agent
+    checks:
+      - id: G5-01
+        desc: 引擎退出码为 0
+        on_fail: block
+      - id: G5-02
+        desc: .vars/.rand/.beta/.log 四件输出齐全且非空
+        on_fail: block
+      - id: G5-03
+        desc: 算法已收敛
+        on_fail: block
+        action: 未收敛结果不可信，判定 block；建议提高 --ai-maxit、更换 vc-method（HI）或检查数据结构
+      - id: G5-04
+        desc: 遗传力落在 validation/analysis-policy.yaml 配置范围内
+        on_fail: block
+      - id: G5-05
+        desc: 残差方差 > 0
+        on_fail: block
+      - id: G5-06
+        desc: SE/h² 不超过 validation/analysis-policy.yaml 配置的预警阈值
+        on_fail: pass_with_warning
+        message: 估计不稳定，样本量或数据结构可能不足
+      - id: G5-07
+        desc: EBV 个体 ID 集合与预期预测个体集合一致且无重复
+        on_fail: block
+      - id: G5-08
+        desc: 遗传力相对配置的性状参考区间核查（只作提示，不作为硬性生物学界限）
+        on_fail: pass_with_warning
+        message: 估计值偏离常见范围，须在报告中提示核查
+
+  # -------------------------------------------------------------
+  # G6 交付闸门：报告生成之前
+  # -------------------------------------------------------------
+  - id: G6
+    name: 交付闸门
+    stage: before_delivery
+    owner: 09-report-agent
+    checks:
+      - id: G6-01
+        desc: 运行元数据已生成且包含完整命令行（仅内部审计；不进入对外交付包）
+        on_fail: block
+      - id: G6-02
+        desc: 处理前后统计已生成（仅内部审计；不进入对外交付包）
+        on_fail: block
+      - id: G6-03
+        desc: 所有 pass_with_warning 告警已汇总进报告
+        on_fail: block
+      - id: G6-04
+        desc: 交付状态取值属于 [completed, partial, failed]
+        on_fail: block
+        message: 禁止使用模糊状态表述
+      - id: G6-05
+        desc: 声明为 completed 时，G5 全部检查项均为 pass
+        on_fail: block
+        message: 存在告警却报 completed 违反诚实交付铁律
+      - id: G6-06
+        desc: 原始输入文件未被修改（校验和与读入时一致）
+        on_fail: block
+        message: 违反原始数据只读铁律
+      - id: G6-07
+        desc: 育种值 Excel 交付工作簿已生成且可读取
+        on_fail: block
+        message: 缺少可直接使用的 Excel 交付表
+
+# ---------------------------------------------------------------
+# 闸门审计
+# ---------------------------------------------------------------
+audit:
+  record_all_verdicts: true       # 无论 pass 还是 block 均写入审计
+  record_fields:
+    - gate_id
+    - check_id
+    - verdict
+    - actual_value
+    - threshold
+    - timestamp
+  output: workspace/logs/gate_audit_{run_id}.jsonl
+
+# 阈值覆盖策略
+override_policy:
+  allowed_by: human_only          # 仅人工可放宽阈值，Agent 无权
+  requires_reason: true
+  audit_required: true
+  never_overridable: [G6-04, G6-05, G6-06]   # 诚实交付与只读铁律永不可放宽

@@ -1,0 +1,48 @@
+# Generated analysis data and runtime state
+workspace/
+*.log
+
+# Archived legacy implementation includes source data and duplicate engines.
+# It is intentionally outside the active Harness baseline.
+impl/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local engine binaries are provisioned separately and verified at runtime.
+tools/HIBLUP/*
+!tools/HIBLUP/.gitkeep
+!tools/HIBLUP/README.txt
+!tools/HIBLUP/hiblup_tool.py
+tools/PLINK/*
+!tools/PLINK/.gitkeep
+!tools/PLINK/LICENSE
+!tools/PLINK/plink_tool.py
+
+.venv/
+configs/mcp-access.json
+workspace/control_plane/
+workspace/mcp_tasks/
+# Local evaluation data and generated release artifacts (never publish by default)
+.coverage
+.coverage.*
+releases/
+*.vars
+*.rand
+**/input/raw/
+configs/mcp-access*.json
+data/
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.tsv
+*.bed
+*.bim
+*.fam
+*.ped
+*.map
+*.vcf
+*.vcf.gz

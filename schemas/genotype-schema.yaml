@@ -1,0 +1,135 @@
+# ABGES 基因型数据结构契约
+# 定义质控后基因型数据的规范，03-genotype-agent 的输出必须符合本契约
+# 版本：1.0.0
+
+meta:
+  schema_id: genotype-schema
+  version: "1.0.0"
+  updated: "2026-08-07"
+
+# ---------------------------------------------------------------
+# 标准存储格式：PLINK 二进制三件套
+# ---------------------------------------------------------------
+canonical_format:
+  type: plink_binary
+  files:
+    - suffix: ".bed"
+      desc: 基因型矩阵（二进制）
+    - suffix: ".bim"
+      desc: 位点信息，6 列无表头
+    - suffix: ".fam"
+      desc: 个体信息，6 列无表头
+  all_required: true
+
+# .bim 列定义
+bim_columns:
+  - index: 1
+    name: CHR
+    type: string
+    desc: 染色体编号，家禽 1-39 常染色体，Z/W 性染色体
+  - index: 2
+    name: SNP
+    type: string
+    desc: 位点标识，须唯一非空
+    constraints:
+      unique: true
+      not_placeholder: true          # 不得为 "."
+      fallback_naming: "{chr}:{pos}"
+  - index: 3
+    name: CM
+    type: float
+    desc: 遗传距离，允许为 0
+  - index: 4
+    name: BP
+    type: int
+    desc: 物理位置，应 > 0
+  - index: 5
+    name: A1
+    type: string
+    desc: 次等位基因
+  - index: 6
+    name: A2
+    type: string
+    desc: 主等位基因
+
+# .fam 列定义
+fam_columns:
+  - index: 1
+    name: FID
+    type: string
+    desc: 家系标识，ABGES 不用于匹配
+  - index: 2
+    name: IID
+    type: string
+    desc: 个体标识，ABGES 统一主键，须与表型 ID 一致
+    constraints:
+      unique: true
+      not_null: true
+      preserve_leading_zeros: true
+  - index: 3
+    name: PAT
+    type: string
+    desc: 父亲标识，未知为 0
+  - index: 4
+    name: MAT
+    type: string
+    desc: 母亲标识，未知为 0
+  - index: 5
+    name: SEX
+    type: int
+    allowed_values: [0, 1, 2]
+    desc: 0=未知 1=公 2=母
+  - index: 6
+    name: PHENO
+    type: float
+    desc: 占位表型列，ABGES 不使用，恒为 -9
+
+# ---------------------------------------------------------------
+# ID 对接约定
+# ---------------------------------------------------------------
+id_linkage:
+  primary_key: IID
+  match_against:
+    - phenotype.ID
+    - pedigree.ID
+  normalization:
+    strip_whitespace: true
+    preserve_leading_zeros: true
+    case_sensitive: true
+  min_overlap_with_phenotype: 50
+  on_zero_overlap:
+    action: block
+    diagnostic: 输出两侧各 10 个样例 ID，提示常见原因（FID/IID 错位、前导零丢失、编号前后缀）
+
+# ---------------------------------------------------------------
+# 质控后状态标记
+# ---------------------------------------------------------------
+qc_state:
+  must_pass: true
+  config: configs/qc/genotype-qc.yaml
+  required_marks:
+    - qc_applied: true
+    - qc_timestamp
+    - thresholds_used                # mind/geno/maf/hwe 实际生效值
+    - n_snp_before
+    - n_snp_after
+    - n_sample_before
+    - n_sample_after
+
+# ---------------------------------------------------------------
+# 引擎输入规范
+# ---------------------------------------------------------------
+engine_input:
+  hiblup_flag: "--bfile"
+  value: 质控后二进制文件的前缀路径（不含后缀）
+  filename_pattern: "{task}_geno_qc_{timestamp}"
+  path_constraint: 路径不含空格与非 ASCII 字符，否则 HIBLUP 参数解析异常
+
+validation:
+  - .bed/.bim/.fam 三件齐全且非空
+  - IID 唯一且非空
+  - SNP ID 唯一且非占位
+  - 质控后位点数 ≥ 1000
+  - 质控后个体数 ≥ 50
+  - 与表型 ID 交集 ≥ 50
+  - 质控标记完整

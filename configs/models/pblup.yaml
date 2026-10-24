@@ -1,0 +1,204 @@
+# ABGES PBLUP 模型配置
+# 系谱基础的最佳线性无偏预测（Pedigree-based BLUP）
+# 执行者：skills/07-geneval-execution -> tools/HIBLUP
+# 版本：1.0.0
+
+meta:
+  model_id: pblup
+  name: 系谱BLUP
+  version: "1.0.0"
+  updated: "2026-08-07"
+  engine: hiblup
+  description: 仅使用系谱构建 A 矩阵进行方差组分估计与育种值预测
+
+# ---------------------------------------------------------------
+# 一、数据需求
+# ---------------------------------------------------------------
+requires:
+  phenotype: true
+  pedigree: true
+  genotype: false
+inputs:
+  phenotype:
+    format: tsv                # Tab 分隔，首行表头
+    encoding: utf-8
+    id_column_index: 1         # 第 1 列必须是个体 ID
+    missing_token: "NA"
+  pedigree:
+    format: csv                # 逗号分隔
+    encoding: utf-8
+    header: ["ID", "Sire", "Dam"]
+    missing_token: "0"
+
+# ---------------------------------------------------------------
+# 二、模型结构
+#   y = mu + 固定效应 + 协变量 + 加性遗传效应(A) + e
+# ---------------------------------------------------------------
+model:
+  formula_template: "{trait} = 1 + {fixed_effects} + {covariates} + PA(R[A]) + e"
+  random_effects:
+    - name: PA
+      type: additive_genetic
+      relationship: A          # 系谱 A 矩阵
+      hiblup_flag: "--add"
+  # 固定效应候选来源于 configs/qc/phenotype-qc.yaml 的 fixed_effect_cols
+  fixed_effect_source: configs/qc/phenotype-qc.yaml#fixed_effect_cols
+  # 是否包含永久环境效应（重复记录性状才启用，如产蛋逐期记录）
+  permanent_environment:
+    enabled: false
+    hiblup_flag: "--rand"
+    trigger: 同一 ID 在表型文件中出现多次时由 planner 自动置为 true
+
+# ---------------------------------------------------------------
+# 三、HIBLUP 调用参数（与参考项目已跑通配置对齐）
+# ---------------------------------------------------------------
+hiblup:
+  binary: tools/HIBLUP/hiblup.exe
+  analysis_flag: "--single-trait"     # 单性状；多性状由 planner 切换为 --multi-trait
+  vc_method: AI                        # 方差组分估计算法：AI / EM / HE
+  max_iter: 30                         # AI 算法最大迭代次数 (--ai-maxit)
+  em_max_iter: 200                     # 回退到 EM 时的最大迭代次数
+  tolerance: 1.0e-6                    # 收敛阈值 (--tol)
+  threads: auto                        # auto = min(物理核数, 16)
+  threads_cap: 16
+  timeout: 3600                        # 单次调用超时（秒），超时判定 failed
+  extra_args: []                       # 预留：由 task 追加，须记入 audit
+
+  # 参数映射：ABGES 内部字段 -> HIBLUP 命令行开关
+  arg_map:
+    phenotype_file: "--pheno"
+    trait_position: "--pheno-pos"      # 每个性状一个 token，空格分隔
+    discrete_covariate: "--dcovar"     # 每个性状一个 token；token 内部逗号分隔列序号；无则填 "0"
+    quantitative_covariate: "--qcovar" # 同 --dcovar 的 token 规则
+    random_effect: "--rand"            # 永久环境等随机效应，同 token 规则
+    pedigree_file: "--pedigree"
+    additive: "--add"
+    vc_method: "--vc-method"
+    tolerance: "--tol"
+    ai_max_iter: "--ai-maxit"          # 仅当 vc_method ∈ {AI, EMAI, HI} 时追加
+    em_max_iter: "--em-maxit"          # 仅当 vc_method ∈ {EM, EMAI} 时追加
+    threads: "--threads"
+    output_prefix: "--out"
+
+  # token 规则（实测口径，不得简化为单一数字）
+  token_rules:
+    per_trait_token: true
+    empty_token: "0"
+    within_token_separator: ","
+    example_single_trait: "--pheno-pos 7 --dcovar 2,3"
+    example_multi_trait: "--pheno-pos 5 7 --dcovar 2,3 2,3"
+
+  # PBLUP 输出无额外后缀；GBLUP/SSGBLUP 走 --bfile 时 HIBLUP 会加 _ad 后缀
+  output_suffix: ""
+
+  # 参考命令（SAMPLE_POPULATION ACL 基线，用于回归对照）
+  reference_command: >-
+    hiblup.exe --single-trait --pheno SAMPLE_POPULATION_pheno.txt --pheno-pos 7
+    --dcovar 2,3 --pedigree SAMPLE_POPULATION_pedigree.csv --threads 16 --add
+    --vc-method AI --tol 1e-06 --ai-maxit 30 --out <前缀>
+
+# ---------------------------------------------------------------
+# 四、标准化 PH007
+# 【2026-10-12 修订，先生指令】原铁律为"多性状强制 z-score"，现改为
+# 单/多性状均不标准化，各性状保持原始量纲——方差组分与 EBV 回到原始尺度，
+# 方可与历史手工结果直接对比（h² 与遗传相关为尺度无关量，不受影响）。
+# 若未来量纲差异极大的性状组合出现收敛困难，可经 human-in-the-loop 将
+# configs/qc/phenotype-qc.yaml 的 PH007.multi_force_standardize 改回 true。
+# ---------------------------------------------------------------
+standardization:
+  single_trait: none        # 单性状分析不做任何标准化，保持原始量纲
+  multi_trait: none         # 多性状分析同样不标准化（2026-10-12 由 zscore 修订）
+  rationale: >-
+    与历史手工结果对比要求原始量纲口径：方差组分与 EBV 保持原始尺度；
+    单/多性状行为一致，不再按模式区分标准化策略。
+
+# ---------------------------------------------------------------
+# 五、执行前置校验（不满足直接 failed，不进入 HIBLUP）
+# ---------------------------------------------------------------
+preflight:
+  - id: E020
+    check: 目标性状有效记录数达到 validation/analysis-policy.yaml#quality_gates.phenotype_min_valid_records
+    message: 有效记录不足，方差组分估计不可靠
+
+  - id: E021
+    check: 表型 ID 与系谱 ID 的交集达到 validation/analysis-policy.yaml#quality_gates.phenotype_pedigree_min_overlap
+    message: 表型与系谱无法对接，检查 ID 格式（前导零、大小写、空白字符）
+
+  - id: E022
+    check: 每个固定效应列的水平数 ≥ 2
+    action: 水平数为 1 的固定效应自动剔除并告警，不得传给 HIBLUP
+    message: 单水平固定效应会导致设计矩阵奇异，HIBLUP 报错或崩溃
+
+  - id: E023
+    check: 表型文件所有列名与固定效应水平值均为 ASCII
+    action: 非 ASCII 触发 sanitize_pheno_for_hiblup 三级降级转码
+    message: HIBLUP v1.7.0 Windows 版写 .rand 文件时遇非 ASCII 会 0xC0000409 崩溃
+
+  - id: E024
+    check: 目标性状方差 > 0
+    message: 性状取值恒定，无法估计方差组分
+
+  - id: E025
+    check: 系谱无环（个体不得是自身祖先）
+    message: 系谱成环会导致 A 矩阵不可逆
+
+# ---------------------------------------------------------------
+# 六、结果解析与合理性判定
+# ---------------------------------------------------------------
+outputs:
+  files:
+    - suffix: ".vars"
+      desc: 方差组分与遗传力估计（含标准误）
+      required: true
+    - suffix: ".rand"
+      desc: 随机效应解，列为 "ID PA residuals"
+      required: true
+    - suffix: ".beta"
+      desc: 固定效应估计，列为 "Levels Estimation SE"
+      required: true
+    - suffix: ".log"
+      desc: HIBLUP 原始日志，原样保留
+      required: true
+
+  parse:
+    heritability_from: ".vars"
+    ebv_from: ".rand"
+    ebv_column: PA
+    fixed_effect_from: ".beta"
+
+sanity_check:
+  heritability:
+    valid_range: [0.0, 1.0]
+    warn_below: 0.01      # 近零遗传力，提示数据结构或模型问题
+    warn_above: 0.80      # 异常高遗传力，提示固定效应遗漏或数据重复
+  standard_error:
+    warn_ratio: 0.5       # SE/h² > 0.5 判定估计不稳定
+  convergence:
+    require_converged: true
+    on_not_converged:
+      - 记录未收敛状态与迭代次数
+      - 自动回退 vc_method: AI -> EM 重试一次（em_max_iter）
+      - 仍未收敛则判定 partial，如实告知，不得报 completed
+  residual_variance:
+    must_be_positive: true
+
+# ---------------------------------------------------------------
+# 七、失败与降级策略
+# ---------------------------------------------------------------
+fallback:
+  - trigger: HIBLUP 非零退出码
+    action: 保留原始 stderr/stdout 与命令行，判定 failed，不做静默重试
+  - trigger: AI 算法不收敛
+    action: 切换 EM 重试一次
+  - trigger: 超时
+    action: 终止进程，判定 failed，记录已耗时与 timeout 值
+  - trigger: 输出文件缺失
+    action: 判定 failed，列出缺失的 suffix 清单
+honesty_contract:
+  # 状态只能取以下三值，禁止用"基本完成"之类模糊表述
+  allowed_status: [completed, partial, failed]
+  completed_requires:
+    - 退出码为 0
+    - .vars/.rand/.beta/.log 四件齐全
+    - 收敛标志为真
+    - 遗传力落在 valid_range

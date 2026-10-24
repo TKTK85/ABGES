@@ -1,0 +1,306 @@
+# ABGES 性状登记表 (Trait Registry)
+# 唯一权威性状定义源。Agent 不得临时发明性状或公式；衍生性状公式必须来自本表或 derived-traits.yaml。
+# 字段说明：
+#   trait_id      性状代码（分析中使用的标准列名）
+#   name_cn       中文名称
+#   name_en       英文名称
+#   type          raw=原始实测性状 / derived=衍生计算性状
+#   unit          单位
+#   value_range   生物学合理范围 [min, max]，超出即判异常
+#   applicable_sex  适用性别 all/M/F
+#   applicable_age  适用日龄说明
+#   role          trait=分析目标性状 / fixed=固定效应候选 / covariate=协变量候选 / id=标识 / pedigree=系谱字段
+
+version: "1.0"
+updated: "2026-08-07"
+
+# ---------------------------------------------------------------------------
+# 标识与系谱字段
+# ---------------------------------------------------------------------------
+identifiers:
+  - trait_id: ID
+    name_cn: 个体号
+    name_en: Individual ID
+    type: raw
+    role: id
+    unit: null
+  - trait_id: Sire
+    name_cn: 父本号
+    name_en: Sire ID
+    type: raw
+    role: pedigree
+    unit: null
+  - trait_id: Dam
+    name_cn: 母本号
+    name_en: Dam ID
+    type: raw
+    role: pedigree
+    unit: null
+
+# ---------------------------------------------------------------------------
+# 固定效应候选
+# ---------------------------------------------------------------------------
+fixed_effect_candidates:
+  - trait_id: Gen
+    name_cn: 世代
+    name_en: Generation
+    type: raw
+    role: fixed
+    unit: null
+    discrete: true
+  - trait_id: Batch
+    name_cn: 批次
+    name_en: Batch
+    type: raw
+    role: fixed
+    unit: null
+    discrete: true
+  - trait_id: Sex
+    name_cn: 性别
+    name_en: Sex
+    type: raw
+    role: fixed
+    unit: null
+    discrete: true
+    allowed_values: ["M", "F"]
+  - trait_id: House
+    name_cn: 栋舍
+    name_en: House
+    type: raw
+    role: fixed
+    unit: null
+    discrete: true
+  - trait_id: Row
+    name_cn: 笼排
+    name_en: Row
+    type: raw
+    role: fixed
+    unit: null
+    discrete: true
+
+  # ---- 以下为 43 周 GBLUP 任务新增登记的固定效应候选（2026-08-21 补注册）----
+  - trait_id: Family
+    name_cn: 家系
+    name_en: Family
+    type: raw
+    role: fixed
+    unit: null
+    discrete: true
+
+  - trait_id: CageLetter
+    name_cn: 笼位字母
+    name_en: Cage letter
+    type: raw
+    role: fixed
+    unit: null
+    discrete: true
+
+# ---------------------------------------------------------------------------
+# 协变量候选（连续型）
+# ---------------------------------------------------------------------------
+covariate_candidates:
+  - trait_id: Age
+    name_cn: 测定日龄
+    name_en: Age at measurement
+    type: raw
+    role: covariate
+    unit: "d"
+    value_range: [0, 800]
+    discrete: false
+  - trait_id: BirthWt
+    name_cn: 初生重
+    name_en: Birth weight
+    type: raw
+    role: covariate
+    unit: "g"
+    value_range: [10, 120]
+    discrete: false
+  - trait_id: AFE
+    name_cn: 开产日龄
+    name_en: Age at first egg
+    type: raw
+    role: covariate
+    unit: "d"
+    value_range: [90, 300]
+    discrete: false
+
+  # ---- 以下为 43 周 GBLUP 任务新增登记的协变量候选（2026-08-21 补注册）----
+  - trait_id: CollectDays
+    name_cn: 收蛋天数
+    name_en: Collect days
+    type: raw
+    role: covariate
+    unit: "d"
+    value_range: [0, 400]
+    discrete: false
+
+  # ---- 312产蛋数PBLUP任务补注册（2026-10-16）----
+  - trait_id: HatchDate
+    name_cn: 出雏日期
+    name_en: Hatch date
+    type: raw
+    role: covariate
+    unit: "d"
+    value_range: [0, 1500]
+    discrete: false
+    note: "数值化为距最早出雏日期的天数，不同批次时间不同"
+
+# ---------------------------------------------------------------------------
+# 目标性状（raw）
+# ---------------------------------------------------------------------------
+traits:
+  - trait_id: BW
+    name_cn: 体重
+    name_en: Body weight
+    type: raw
+    role: trait
+    unit: "g"
+    value_range: [100, 8000]
+    applicable_sex: all
+    applicable_age: "按测定日龄，常见 42/70/身分测定点"
+    version: "1.0"
+
+  - trait_id: EW
+    name_cn: 蛋重
+    name_en: Egg weight
+    type: raw
+    role: trait
+    unit: "g"
+    value_range: [20, 90]
+    applicable_sex: F
+    applicable_age: "开产后测定"
+    version: "1.0"
+
+  - trait_id: EN
+    name_cn: 产蛋数
+    name_en: Egg number
+    type: raw
+    role: trait
+    unit: "枚"
+    value_range: [0, 400]
+    applicable_sex: F
+    applicable_age: "统计区间内累计，常见 300 日龄"
+    version: "1.0"
+
+  - trait_id: ER
+    name_cn: 产蛋率
+    name_en: Egg production rate
+    type: raw
+    role: trait
+    unit: "%"
+    value_range: [0, 100]
+    applicable_sex: F
+    applicable_age: "统计区间内"
+    version: "1.0"
+
+  - trait_id: FI
+    name_cn: 采食量
+    name_en: Feed intake
+    type: raw
+    role: trait
+    unit: "g"
+    value_range: [0, 20000]
+    applicable_sex: all
+    applicable_age: "测定期累计"
+    version: "1.0"
+
+  - trait_id: WG
+    name_cn: 增重
+    name_en: Weight gain
+    type: raw
+    role: trait
+    unit: "g"
+    value_range: [0, 8000]
+    applicable_sex: all
+    applicable_age: "测定期"
+    version: "1.0"
+
+  # 衍生性状在此登记元信息，计算公式见 derived-traits.yaml
+  - trait_id: ACL
+    name_cn: 平均连产长度
+    name_en: Average clutch length
+    type: derived
+    role: trait
+    unit: "枚/连产"
+    value_range: [1, 100]
+    applicable_sex: F
+    applicable_age: "统计区间内捡蛋记录"
+    version: "1.0"
+
+  - trait_id: MCL
+    name_cn: 最大连产长度
+    name_en: Maximum clutch length
+    type: derived
+    role: trait
+    unit: "枚"
+    value_range: [1, 200]
+    applicable_sex: F
+    applicable_age: "统计区间内捡蛋记录"
+    version: "1.0"
+
+  - trait_id: CEN
+    name_cn: 累计产蛋数
+    name_en: Cumulative egg number
+    type: derived
+    role: trait
+    unit: "枚"
+    value_range: [0, 400]
+    applicable_sex: F
+    applicable_age: "统计区间内捡蛋记录累计"
+    version: "1.0"
+
+  - trait_id: FCR
+    name_cn: 料重比
+    name_en: Feed conversion ratio
+    type: derived
+    role: trait
+    unit: "g/g"
+    value_range: [0.5, 10]
+    applicable_sex: all
+    applicable_age: "测定期"
+    version: "1.0"
+
+  # ---- 以下为本次 53 任务评估新增登记的性状（2026-08-21 补注册）----
+  - trait_id: DR
+    name_cn: 全净膛率
+    name_en: Dressing percentage (eviscerated)
+    type: raw
+    role: trait
+    unit: "%"
+    value_range: [0, 100]
+    applicable_sex: all
+    applicable_age: "屠宰测定"
+    version: "1.0"
+
+  - trait_id: AF
+    name_cn: 腹脂率
+    name_en: Abdominal fat percentage
+    type: raw
+    role: trait
+    unit: "%"
+    value_range: [0, 100]
+    applicable_sex: all
+    applicable_age: "屠宰测定"
+    version: "1.0"
+
+  - trait_id: TW
+    name_cn: 睾丸重
+    name_en: Testis weight
+    type: raw
+    role: trait
+    unit: "g"
+    value_range: [1, 50]
+    applicable_sex: M
+    applicable_age: "屠宰测定"
+    version: "1.0"
+
+  - trait_id: Egg43W
+    name_cn: 43周产蛋数
+    name_en: Egg number at 43 weeks
+    type: raw
+    role: trait
+    unit: "枚"
+    value_range: [0, 400]
+    applicable_sex: F
+    applicable_age: "43周龄"
+    version: "1.0"

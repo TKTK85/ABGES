@@ -1,0 +1,41 @@
+{
+  "_render_markdown_report": {
+    "gblup|ssgblup": 0.6891,
+    "pblup|gblup": 0.8856,
+    "pblup|ssgblup": 0.7149
+  },
+  "_stage_execution": {
+    "gblup|ssgblup": 0.5753,
+    "pblup|gblup": 0.7473,
+    "pblup|ssgblup": 0.5789
+  },
+  "_stage_genotype": {
+    "gblup|ssgblup": 0.8916
+  },
+  "_stage_pedigree": {
+    "pblup|ssgblup": 0.9434
+  },
+  "_stage_phenotype": {
+    "gblup|ssgblup": 0.6105,
+    "pblup|gblup": 0.7423,
+    "pblup|ssgblup": 0.6
+  },
+  "_stage_planner": {
+    "gblup|ssgblup": 0.5517,
+    "pblup|gblup": 0.4842,
+    "pblup|ssgblup": 0.5946
+  },
+  "_stage_reporter": {
+    "gblup|ssgblup": 0.9118,
+    "pblup|gblup": 0.587,
+    "pblup|ssgblup": 0.587
+  },
+  "_stage_supervisor": {
+    "gblup|ssgblup": 0.5714,
+    "pblup|gblup": 0.7667,
+    "pblup|ssgblup": 0.5517
+  },
+  "_validate_multi_trait": {
+    "pblup|gblup": 1.0
+  }
+}

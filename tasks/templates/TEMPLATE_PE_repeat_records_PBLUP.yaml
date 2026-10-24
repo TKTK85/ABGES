@@ -1,0 +1,33 @@
+# ABGES 任务定义（PE 重复记录模型示例模板）
+# 用途：O4 能力示例——permanent_environment: true 触发 --rand 1 拟合永久环境效应
+# 前提条件（三者缺一不可，否则 runner 以 E013 阻断）：
+#   1. 表型为个体×多批次重复测定原始记录（longitudinal），同一 ID 出现多行；
+#      个体级汇总数据（每 ID 一行，如已汇总的 EN300/ER300）不适用本模型；
+#   2. phenotype-qc.yaml PH002 duplicate_policy 保持 "flag"（默认值），
+#      确保重复记录不被去重删除；
+#   3. 基因型/系谱约束同普通 PBLUP。
+# 说明：
+#   - 运行效果：HIBLUP 命令将携带 --rand 1（个体 ID 列作环境随机），
+#     .vars 输出会多出 ID 行（PE 方差组分），h² 提取按 Item=PA 精确匹配（O16），
+#     不会误取 PE 行；
+#   - 该模板仅示意结构，实际使用时替换 inputs 路径与性状名后复制到
+#     tasks/from_summary/ 下并改名。
+task_id: TEMPLATE_PE_repeat_records_PBLUP
+command: run
+inputs:
+  phenotype: "D:/path/to/strain_egg_longitudinal.xlsx"   # 个体×批次重复记录
+  pedigree: "D:/path/to/strain_ped.xlsx"
+traits: [EN_per_week]          # 每周产蛋数等重复测定性状
+model: pblup
+multi_trait: false
+permanent_environment: true    # O4：触发 --rand 1
+fixed_effects: [Batch]           # 批次等
+covariates: []
+engine_params:
+  vc_method: AI
+  tolerance: 1.0e-6
+  max_iter: 1000
+  threads: 16
+  timeout: 3600
+output_dir: "${ABGES_ROOT}/workspace/output"
+output_format: [markdown, xlsx, docx, engine_outputs]

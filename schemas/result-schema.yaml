@@ -1,0 +1,187 @@
+# ABGES 最终结果契约
+# 定义一次完整评估任务的机器可读输出（--json 通道），供上游系统解析
+# 版本：1.0.0
+
+meta:
+  schema_id: result-schema
+  version: "1.0.0"
+  updated: "2026-08-07"
+  channel: machine        # 人类通道另出中文摘要与报告
+
+result:
+  required_fields:
+    - name: run_id
+      type: string
+    - name: task_id
+      type: string
+    - name: abges_version
+      type: string
+    - name: status
+      type: enum
+      allowed_values: [completed, partial, failed]
+    - name: timestamp_start
+      type: datetime
+    - name: timestamp_end
+      type: datetime
+    - name: duration_seconds
+      type: float
+
+    # ---- 模型与数据 ----
+    - name: model
+      type: object
+      fields:
+        - model_id: enum[pblup, gblup, ssblup]
+        - engine: string
+        - engine_version: string
+        - formula: string          # 如 "ACL = 1 + Gen(F) + Batch(F) + PA(R[G]) + e"
+        - vc_method: string
+        - converged: boolean
+        - n_iterations: int
+
+    - name: data_summary
+      type: object
+      fields:
+        - n_phenotype_records: int
+        - n_valid_records: int      # 参与分析的有效记录数
+        - n_pedigree_individuals: int
+        - n_genotyped: int
+        - n_snp_used: int
+        - fixed_effects_used: list[string]
+        - covariates_used: list[string]
+        - fixed_effects_dropped: list[object]   # 含剔除原因，如 E022 单水平
+
+    # ---- 核心估计结果 ----
+    - name: variance_components
+      type: object
+      fields:
+        - additive: float           # 加性遗传方差
+        - additive_se: float
+        - permanent_env: float      # 无则为 null
+        - residual: float
+        - residual_se: float
+        - phenotypic: float
+
+    - name: heritability
+      type: object
+      fields:
+        - estimate: float
+        - se: float
+        - valid_range_check: boolean
+        - reference_range: [float, float]      # 来自 trait-registry
+        - within_reference: boolean
+
+    - name: ebv
+      type: object
+      fields:
+        - file: path                # EBV 明细文件路径
+        - n_individuals: int
+        - column: string            # 通常为 PA
+        - mean: float
+        - sd: float
+        - min: float
+        - max: float
+        - top_n_preview: list[object]          # [{id, ebv, rank}]
+
+    - name: fixed_effect_estimates
+      type: list[object]
+      fields: [level, estimate, se]
+
+    # ---- 产出与追溯 ----
+    - name: output_files
+      type: list[object]
+      fields: [path, type, size_bytes, desc]
+      note: 必须包含 .vars/.rand/.beta/.log 四件原始输出
+
+    - name: metadata_file
+      type: path
+      desc: "*_metadata.json，含完整可复现命令行"
+
+    - name: statistics_file
+      type: path
+      desc: "*_statistics.json，含处理前后统计"
+
+    - name: audit_file
+      type: path
+      desc: audit_{run_id}.jsonl
+
+    - name: warnings
+      type: list[object]
+      fields: [stage, code, message, affected_count, action_taken, requires_review]
+
+    - name: errors
+      type: list[object]
+      fields: [stage, code, message, blocking]
+
+    - name: gate_summary
+      type: object
+      fields:
+        - total_checks: int
+        - passed: int
+        - passed_with_warning: int
+        - blocked: int
+        - blocked_details: list[object]
+
+  optional_fields:
+    - name: baseline_comparison
+      type: object
+      desc: 提供 baseline 时的回归对照
+      fields:
+        - baseline_path: path
+        - h2_baseline: float
+        - h2_current: float
+        - h2_diff: float
+        - ebv_correlation: float
+        - verdict: enum[match, drift, mismatch]
+
+    - name: cross_model_comparison
+      type: list[object]
+      fields: [model_id, heritability, se]
+
+    - name: report_files
+      type: list[path]
+
+# ---------------------------------------------------------------
+# 状态判定规则（与 gate-rules G5/G6 一致，不得另立标准）
+# ---------------------------------------------------------------
+status_rules:
+  completed:
+    - 引擎退出码为 0
+    - .vars/.rand/.beta/.log 四件齐全非空
+    - converged 为 true
+    - heritability.estimate 落在 [0, 1]
+    - residual > 0
+    - gate_summary.blocked == 0 且 passed_with_warning == 0
+  partial:
+    - 主体结果已产出，但存在 passed_with_warning 项
+    - 或存在 requires_review=true 的未完成验证/风险项
+    - 或 converged 为 false 但结果已落盘
+  failed:
+    - 引擎非零退出 / 输出缺失 / 闸门阻断 / 前置校验不通过
+
+# ---------------------------------------------------------------
+# 示例（SAMPLE_POPULATION ACL PBLUP 基线）
+# ---------------------------------------------------------------
+example:
+  run_id: "20260807_152019_SAMPLE_POPULATION_ACL"
+  task_id: SAMPLE_POPULATION_ACL_PBLUP
+  status: completed
+  model:
+    model_id: pblup
+    engine: hiblup
+    engine_version: "1.6.0"
+    formula: "ACL = 1 + Gen(F) + Batch(F) + PA(R[G]) + e"
+    vc_method: AI
+    converged: true
+    n_iterations: 4
+  data_summary:
+    n_phenotype_records: 200
+    n_valid_records: 48
+    n_pedigree_individuals: 150
+    fixed_effects_used: ["Gen", "Batch"]
+  variance_components:
+    additive: 0.42
+    residual: 0.58
+  heritability:
+    estimate: 0.42
+    se: 0.03
+    valid_range_check: true

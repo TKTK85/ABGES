@@ -1,0 +1,253 @@
+# ABGES 基因型质控配置
+# 适用范围：GBLUP / SSGBLUP 流程的基因型数据质控
+# 执行者：skills/03-genotype-qc
+# 底层工具：PLINK2（tools/PLINK/plink2.exe）
+# 2026-08-17 v1.1：规则同类合并与连续重编号，畜牧兽医专业术语规范化；全部阈值与语义不变。
+#   合并映射：原GT001+原GT002→GT001；原GT003→GT002；原GT004→GT003；
+#             原GT005+原GT006+原GT007→GT004；原GT008+原GT009→GT005；
+#             原GT010→GT006；原GT011→GT007；原GT012→GT008。
+#   （原 meta 块说明：config_id=genotype-qc, owner=03-genotype-agent,
+#     description=基因型数据读取校验与质控规则）
+
+# 2026-10-12 v1.2：新增 freq_hwe_scope 与 min_founders_warning（等位基因频率/HWE
+#   统计口径）。依据 plink-ng 源码实证：--maf 与 --hwe 默认仅基于 founder 计算，
+#   育种家系数据下会导致 HWE 规则静默失效。默认改为全群口径（all_samples）。
+#   阈值、规则编号与质控顺序均不变。
+version: "1.2"
+updated: "2026-10-12"
+
+# ---------------------------------------------------------------
+# 一、输入格式识别
+# ---------------------------------------------------------------
+input_formats:
+  # 优先级顺序：命中即停
+  - format: plink_binary
+    required_suffix: [".bed", ".bim", ".fam"]
+    description: PLINK 二进制三件套，推荐格式，读取最快
+    plink_flag: "--bfile"
+  - format: plink_text
+    required_suffix: [".ped", ".map"]
+    description: PLINK 文本格式，需转换为二进制后再处理
+    plink_flag: "--file"
+    auto_convert_to: plink_binary
+  - format: vcf
+    required_suffix: [".vcf", ".vcf.gz"]
+    description: VCF 格式，需转换为二进制后再处理
+    plink_flag: "--vcf"
+    auto_convert_to: plink_binary
+
+# 染色体集合：家禽为二倍体，共 39 条染色体（1-38 常染色体 + Z 性染色体）
+chromosome_set:
+  species: chicken
+  # PLINK2 需显式指定，否则非人类物种染色体编号会被拒绝。
+  # 家禽建模约定：用 --chr-set 39 no-xy 把 1–39 全部当作常染色体处理，
+  # 其中第 39 号即 Z 性染色体（W 缺失）。因此 Z 在 PLINK2 视角下被当作常染色体，
+  # 会【进入】 GRM 构建。
+  # 【2026-10-13 一致性说明】本段 autosome_max / sex_chromosomes / include_in_grm
+  # 仅为语义标注；代码实际以 tools/PLINK/plink_tool.py 的 DEFAULT_CHR_SET=39 为准，
+  # 并不读取这些字段，也不会据此过滤 Z。若日后要“排除 Z”，须在代码中按 chr==39 过滤，
+  # 当前不做（与“Z 补偿删除后由 HIBLUP 内部建 G”的既定策略一致）。
+  plink_args: ["--chr-set", "39", "no-xy"]
+  autosome_max: 39
+  sex_chromosomes: ["Z"]
+  # 语义标注：字面意为“仅常染色体入 GRM”，但 Z 编码为 chr39 被视为常染色体，
+  # 实际 Z 已包含在内；此字段不参与代码过滤，请勿据此误判 Z 已被排除。
+  include_in_grm: autosome_only
+
+# ---------------------------------------------------------------
+# 二、质控阈值（可被 task 级参数覆盖，覆盖须记录到 audit）
+# ---------------------------------------------------------------
+thresholds:
+  # 个体层
+  mind: 0.10          # 个体基因型缺失率上限，超过则剔除个体
+  # 位点层
+  geno: 0.10          # 位点缺失率上限，超过则剔除位点
+  maf: 0.01           # 最小等位基因频率下限，低于则剔除位点
+  hwe: 1.0e-6         # Hardy-Weinberg 平衡检验 P 值下限，低于则剔除位点
+  # 关系层
+  king_cutoff: 0.354  # 重复样本判定阈值（约等于同一个体/克隆），仅告警不自动剔除
+  # 规模层
+  min_snp_after_qc: 1000       # 默认值；运行时由 validation/analysis-policy.yaml 同步覆盖
+  min_sample_after_qc: 50      # 默认值；运行时由 validation/analysis-policy.yaml 同步覆盖
+
+# ---------------------------------------------------------------
+# 二之二、等位基因频率与 HWE 检验的统计口径（2026-10-12 新增）
+# ---------------------------------------------------------------
+# 依据：PLINK2 源码实证（plink-ng-master/2.0/plink2.cc）
+#   L2728  hwe_geno_cts = nonfounders ? raw_geno_cts : founder_raw_geno_cts
+#   L2836  EnforceFreqConstraints(..., nonfounders ? allele_ddosages
+#                                                 : founder_allele_ddosages, ...)
+# 即 --maf 与 --hwe 默认【仅基于 founder（基础群）】计算，
+# 必须显式追加 --nonfounders 才会纳入全群。
+#
+# 育种家系数据结构（G0 基础群少、后代多）下沿用默认口径的实测后果：
+#   1) HWE 检验功效不足 —— 300 个体 / founder=30 时剔除数恒为 0，
+#      规则静默失效，而报告仍显示"通过"；加 --nonfounders 后剔除 34 个。
+#   2) MAF 基于小样本估频 —— 最终保留位点数与全群口径相同（1921），
+#      但成员相差 43 个（交集 1878），即静默替换了一批进入 G 矩阵的位点。
+#
+# 可选值：
+#   all_samples   全群口径（推荐，plink_tool 自动追加 --nonfounders）
+#   founders_only 沿用 PLINK2 默认，仅基础群参与频率与 HWE 计算
+# 覆盖须由上层记入 audit。
+freq_hwe_scope: all_samples
+
+# 基础群规模告警下限：founders_only 口径下 founder 数低于此值时，
+# 频率估计不可靠且 HWE 功效不足，plink_tool 将产出 warning（不阻断）。
+# 参照 PLINK2 --bad-freqs 帮助文本中的 50 founders 门槛。
+min_founders_warning: 50
+
+# 质控执行顺序：先剔个体后剔位点，避免高缺失个体拉低整体位点通过率
+# 注：PLINK2 单次调用内部的实际施加次序为 mind→geno→hwe→maf。
+# 本流程为分步独立调用，maf 与 hwe 均为纯位点级过滤、不改变样本集合，
+# 故二者先后不影响最终位点集合（已实测验证：三种流程结果集合完全一致）。
+qc_order:
+  - step: mind
+    plink_args: ["--mind"]
+  - step: geno
+    plink_args: ["--geno"]
+  - step: maf
+    plink_args: ["--maf"]
+  - step: hwe
+    plink_args: ["--hwe"]
+
+# ---------------------------------------------------------------
+# 三、规则表（GT001–GT008）
+# 级别：error=阻断，warning=告警继续，info=仅记录
+# ---------------------------------------------------------------
+rules:
+  - id: GT001
+    name: 基因型文件完整性与非空校验
+    level: error
+    merged_from: [GT001@1.0, GT002@1.0]
+    check: 指定 --bfile 前缀时，.bed/.bim/.fam 三件套同时存在且可读；.bim 行数 > 0 且 .fam 行数 > 0
+    action: 缺任一文件或文件为空即中止，报告缺失文件名、查找路径与实际行数
+
+  - id: GT002
+    name: 个体号与表型/系谱可对接
+    level: error
+    merged_from: [GT003@1.0]
+    check: .fam 第二列（IID）与表型文件个体号列的交集数量 > 0
+    action: 交集为 0 时中止，输出两侧各 10 个样例个体号供人工比对（常见原因：FID/IID 顺序颠倒、前导零丢失）
+    note: ABGES 统一以 .fam 的 IID（第二列）作为个体主键，FID 不参与匹配
+
+  - id: GT003
+    name: 个体号唯一性
+    level: error
+    merged_from: [GT004@1.0]
+    check: .fam 的 IID 唯一
+    action: 中止并列出重复个体号
+
+  - id: GT004
+    name: 位点标识与坐标规范
+    level: warning
+    merged_from: [GT005@1.0, GT006@1.0, GT007@1.0]
+    check: .bim 第二列 SNP 标识唯一、不为空且不为"."；第四列物理位置 > 0
+    action: >-
+      SNP 标识重复者保留首次出现，其余重命名为 <id>_dup<N>；标识缺失或占位者
+      按 chr:pos 重命名；物理位置为 0 或缺失者标记，需按染色体分块计算时剔除；
+      全部处理记录清单
+
+  - id: GT005
+    name: 非常染色体与单态位点处理
+    level: warning
+    merged_from: [GT008@1.0, GT009@1.0]
+    check: 统计性染色体（Z/W）、线粒体及未定位（chr 0）位点数量；每位点 MAF > 0（存在多态）
+    action: >-
+      非常染色体位点默认从基因组关系矩阵（GRM）构建中排除；单态位点由 maf 阈值
+      统一剔除；两类数量均单独写入统计
+
+  - id: GT006
+    name: 质控后规模门控
+    level: error
+    merged_from: [GT010@1.0]
+    check: 质控后保留位点数 ≥ min_snp_after_qc 且保留个体数 ≥ min_sample_after_qc
+    action: 不满足则判定 failed，明确告知阈值与实际值，不得继续构建 GRM
+
+  - id: GT007
+    name: 高度相似样本核验
+    level: warning
+    merged_from: [GT011@1.0]
+    check: KING 亲缘系数 ≥ king_cutoff 的样本对
+    action: 仅列出样本对清单交由人工判断，系统不自动剔除（家禽全同胞家系本身高度相关）
+
+  - id: GT008
+    name: 性别编码一致性
+    level: warning
+    merged_from: [GT012@1.0]
+    check: .fam 第五列性别编码（1=公, 2=母, 0=未知）与表型文件性别列一致
+    action: 冲突记录清单；GRM 构建不依赖性别，故不阻断
+
+# ---------------------------------------------------------------
+# 四、GRM 构建（供 GBLUP / SSGBLUP 使用）
+# ---------------------------------------------------------------
+grm:
+  # ABGES 将质控后的二进制文件直接交给 HIBLUP，G 矩阵【完全由 HIBLUP 内部构建】。
+  # 不在交付前对 .bed 做任何编码改写（含性染色体剂量补偿），原因见下方说明。
+  # 仅在需要独立导出 GRM 时启用 plink 路径
+  builder: hiblup            # hiblup | plink
+  hiblup_flag: "--bfile"     # HIBLUP 读取 PLINK 二进制前缀
+  method: VanRaden1          # G 矩阵构造方法（HIBLUP 内部实现，本配置仅作口径描述）
+  missing_genotype_handling: mean_impute   # 缺失基因型按位点均值填补
+  export_grm: false          # 默认不额外导出 GRM 文本，避免大文件占盘
+  export_format: grm_bin
+
+  # ---------------------------------------------------------------
+  # 【2026-10-13 移除】Z 染色体剂量补偿（原 sex_chromosome 段）已删除
+  # ---------------------------------------------------------------
+  # 先生指令："A 和 B 方案都不需要，直接删掉这个，G 矩阵直接由 HIBLUP 构建"。
+  # HIBLUP 从质控后基因型构建 GRM；性染色体位点是否参与由质控规则决定。
+  # 不再单独设置 include_z_in_grm / z_dosage_compensation / include_w_in_grm。
+
+# SSGBLUP 的 H 矩阵参数（A 与 G 融合）
+h_matrix:
+  alpha: 0.05      # HIBLUP --alpha，控制 G 与 A22 的融合权重
+  note: 由 HIBLUP --pedigree + --bfile 同时提供时自动进入 SSGBLUP 分支
+  authoritative_source: configs/models/ssblup.yaml#h_matrix
+
+# ---------------------------------------------------------------
+# 五、统计指标（处理前后强制记录，写入 *_statistics.json）
+# ---------------------------------------------------------------
+statistics:
+  before:
+    - n_sample_raw
+    - n_snp_raw
+    - n_chromosome
+    - call_rate_overall
+    - format_detected
+    - n_founder_raw          # 基础群个体数（.fam 父母列均为空者），用于评估频率估计可靠性
+    - freq_hwe_scope         # 实际生效的频率/HWE 统计口径
+  after:
+    - n_sample_kept
+    - n_snp_kept
+    - n_sample_removed_by_mind
+    - n_snp_removed_by_geno
+    - n_snp_removed_by_maf
+    - n_snp_removed_by_hwe
+    - n_snp_monomorphic
+    - n_snp_non_autosome_excluded
+    - maf_mean
+    - maf_min
+    - call_rate_after_qc
+    - id_overlap_with_phenotype
+    - id_overlap_with_pedigree
+
+# ---------------------------------------------------------------
+# 六、输出约定
+# ---------------------------------------------------------------
+output:
+  # 原始基因型只读，质控结果一律写入新前缀，永不覆盖
+  naming: "{stem}_qc_{timestamp}"
+  keep_intermediate: true
+  intermediate_dir: workspace/intermediate/genotype
+  artifacts:
+    - suffix: ".bed/.bim/.fam"
+      desc: 质控后二进制基因型
+    - suffix: "_qc_report.json"
+      desc: 规则命中与统计
+    - suffix: "_removed_samples.txt"
+      desc: 被剔除个体清单
+    - suffix: "_removed_snps.txt"
+      desc: 被剔除位点清单
+    - suffix: "_plink.log"
+      desc: PLINK 原始日志（原样保留，供追溯）

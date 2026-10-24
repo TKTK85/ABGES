@@ -1,0 +1,130 @@
+# ABGES 系谱数据结构契约
+# 定义标准化系谱表的字段规范，02-pedigree-agent 的输出必须符合本契约
+# 版本：1.1.0
+
+meta:
+  schema_id: pedigree-schema
+  version: "1.1.0"
+  updated: "2026-10-22"
+
+structure:
+  format: dataframe
+  orientation: 一行一个个体
+  encoding: utf-8
+  column_naming: ascii_only
+
+columns:
+  - name: ID
+    type: string
+    required: true
+    unique: true  # QC 后输出须唯一；原始输入可重复，按 ID/Sire/Dam 规则处理
+    description: 个体标识（翅号），系谱主键
+    constraints:
+      not_null: true
+      strip_whitespace: true
+      preserve_leading_zeros: true
+      not_equal_to_sire: true        # 个体不得是自身父亲
+      not_equal_to_dam: true
+
+  - name: Sire
+    type: string
+    required: true
+    description: 父亲标识，未知用 "0"
+    constraints:
+      unknown_token: "0"
+      must_appear_as_ID_or_unknown: true   # 非未知父本必须有系谱记录，否则剔除引用个体及受影响后代
+      sex_consistency: male                 # 物种及性别资料支持时检查；错误个体及后代剔除
+
+  - name: Dam
+    type: string
+    required: true
+    description: 母亲标识，未知用 "0"
+    constraints:
+      unknown_token: "0"
+      must_appear_as_ID_or_unknown: true   # 非未知母本必须有系谱记录，否则剔除引用个体及受影响后代
+      sex_consistency: female
+
+  # ---- 可选扩展列（不进入 HIBLUP，仅用于统计与报告）----
+  - name: Gen
+    type: int
+    required: false
+    description: 世代序号，可由系谱自动推断
+    derivation: 无父无母者为第 0 世代，逐层 +1
+
+  - name: Sex
+    type: category
+    required: false
+    allowed_values: ["M", "F", "U"]
+
+  - name: Source
+    type: string
+    required: false
+    description: 数据来源文件名，用于多源冲突追溯
+
+# ---------------------------------------------------------------
+# 未知值口径
+# ---------------------------------------------------------------
+unknown_handling:
+  input_tokens: ["", "0", "NA", "na", "N/A", "null", "NULL", "None", "-", "未知", "无"]
+  output_token: "0"                  # 统一归一化为 "0"
+  rationale: HIBLUP 以 0 表示未知亲本
+
+# ---------------------------------------------------------------
+# 结构完整性
+# ---------------------------------------------------------------
+integrity:
+  no_cycle: true                     # 个体不得是自身祖先，检测算法：DFS 环检测
+  parent_must_exist: exclude_dependent_record  # 亲本记录缺失时剔除引用个体及受影响后代，不自动补建为真实基础群
+  duplicate_policy: "deduplicate_exact_ID_Sire_Dam_else_exclude_all_ID_records"
+  invalid_record_policy: "exclude_record_and_descendants_retain_parents_and_unaffected_siblings"
+  late_unknown_parent_check:
+    enabled: true
+    basis: pedigree_topological_depth
+    allowed_depth: task_configured
+    uses_management_generation_or_batch: false
+  explicit_generation_order_check:
+    enabled_only_when: "pedigree_generation_semantics=genetic_generation"
+    violation: "parent_generation_greater_than_or_equal_to_offspring_generation"
+  sort_order: parents_before_offspring   # 亲本行必须先于子代行，HIBLUP 要求
+  max_generations: task_configured   # 依任务设定报告追溯深度；不得静默截断引擎系谱
+
+# ---------------------------------------------------------------
+# 引擎输入文件规范
+# ---------------------------------------------------------------
+engine_input:
+  filename_pattern: "{task}_pedigree_{timestamp}.csv"
+  delimiter: ","
+  header: true
+  header_names: ["ID", "Sire", "Dam"]
+  encoding: utf-8
+  column_count: 3                    # 仅 3 列，扩展列不写入引擎输入
+  unknown_token: "0"
+
+# ---------------------------------------------------------------
+# 统计指标
+# ---------------------------------------------------------------
+statistics:
+  - n_individual
+  - n_founder                        # 父母均未知的个体数
+  - n_sire_unique
+  - n_dam_unique
+  - n_generation
+  - n_full_sib_family
+  - n_half_sib_family
+  - mean_offspring_per_sire
+  - mean_offspring_per_dam
+  - n_explicit_founder                  # 原始系谱中父母均为 NA/0 的合法基础群个体
+  - n_invalid_records_excluded
+  - n_cascade_descendants_excluded
+  - n_missing_parent_references
+  - n_cycle_detected
+
+validation:
+  - 三列齐全且列名规范
+  - ID 唯一且非空
+  - ID/Sire/Dam 三列一致的重复记录只保留一条；同一 ID 父母关系冲突时该 ID 全部剔除
+  - 未知亲本统一为 "0"
+  - 所有非未知亲本在 ID 列中存在
+  - 无成环
+  - 无性别冲突（同一 ID 不同时作父与母）
+  - 亲本行排在子代行之前
