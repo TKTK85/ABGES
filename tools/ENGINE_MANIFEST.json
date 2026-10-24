@@ -15,7 +15,7 @@
     },
     {
       "name": "PLINK",
-      "version": "2 (local distribution)",
+      "version": "2.0.0-a.7.1 (4 May 2026), Windows 64-bit",
       "path": "tools/PLINK/plink2.exe",
       "sha256": "247491bfca7512e070dc99d6565e9fc56f3a52ad5afc01286016271d34c4992f",
       "required_files": [

@@ -11,7 +11,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Local engine binaries are provisioned separately and verified at runtime.
+# HIBLUP is provisioned separately; PLINK is bundled and verified at runtime.
 tools/HIBLUP/*
 !tools/HIBLUP/.gitkeep
 !tools/HIBLUP/README.txt
@@ -20,6 +20,8 @@ tools/PLINK/*
 !tools/PLINK/.gitkeep
 !tools/PLINK/LICENSE
 !tools/PLINK/plink_tool.py
+!tools/PLINK/plink2.exe
+!tools/PLINK/README.md
 
 .venv/
 configs/mcp-access.json

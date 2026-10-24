@@ -2,7 +2,7 @@
 
 ABGES V1.0 将表型、系谱和基因型质控、模型规划、遗传评估、结果验证和报告生成组织为一套可配置、可追溯的流程。项目通过 Harness 统一入口调用阶段执行器，由 HIBLUP 完成遗传评估，PLINK 2 用于基因型处理。
 
-仓库包含源代码、通用配置、任务模板、测试和文档，**不提供真实育种数据、历史评估结果、凭据或 HIBLUP / PLINK 可执行文件**。使用者需要在本机准备数据与引擎。配置和测试通过不能替代真实数据上的收敛检查及结果验证。
+仓库包含源代码、通用配置、任务模板、测试和文档，**不提供真实育种数据、历史评估结果或凭据**。Windows 64 位 PLINK 2 已随包分发，版本、许可证和对应源码见 [PLINK 分发说明](tools/PLINK/README.md)；使用者需要在本机准备数据与 HIBLUP 引擎。配置和测试通过不能替代真实数据上的收敛检查及结果验证。
 
 ## 功能与适用范围
 
@@ -43,14 +43,13 @@ python -m venv .venv
 
 ### 2. 配置并检查本地引擎
 
-按引擎提供方的许可和安装说明准备二进制文件，放在以下位置：
+仓库已包含 `tools/PLINK/plink2.exe`（Windows 64 位，v2.0.0-a.7.1）。按 HIBLUP 提供方的许可和安装说明准备以下文件：
 
 ```text
 tools/HIBLUP/hiblup.exe
 tools/HIBLUP/libiomp5md.dll
 tools/HIBLUP/vcruntime140.dll
 tools/HIBLUP/vcruntime140_1.dll
-tools/PLINK/plink2.exe
 ```
 
 执行完整部署检查：
