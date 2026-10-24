@@ -57,7 +57,7 @@ Windows 64 位 PLINK 2（`tools/PLINK/plink2.exe`，v2.0.0-a.7.1）与 HIBLUP（
 
 ### 3. 准备数据和任务 YAML
 
-将原始文件保存在本地数据目录，例如 `workspace/input/raw/`。原始数据保持只读，所有处理结果另存。普通单记录 PBLUP 的表型每个个体一行，至少包含 `ID`、目标性状及指定的固定效应列；系谱至少包含 `ID`、`Sire`、`Dam`。ID 应按文本保存以保留前导零，未知亲本使用 `NA` 或 `0`。完整规则见[表型契约](schemas/phenotype-schema.yaml)和[系谱契约](schemas/pedigree-schema.yaml)。
+原始数据保留在你自己的数据目录即可，不必复制进仓库；任务 YAML 的 `inputs:` 直接指向这些文件（支持本机绝对路径）。ABGES 不改动原始文件，运行时才把整理后实际供给引擎的输入固化到 `workspace/<task_id>/input/`（如 `engine_phenotype.txt`、`engine_pedigree.txt`）。普通单记录 PBLUP 的表型每个个体一行，至少包含 `ID`、目标性状及指定的固定效应列；系谱至少包含 `ID`、`Sire`、`Dam`。ID 应按文本保存以保留前导零，未知亲本使用 `NA` 或 `0`。完整规则见[表型契约](schemas/phenotype-schema.yaml)和[系谱契约](schemas/pedigree-schema.yaml)。
 
 在 `tasks/local_pblup.yaml` 新建任务，下面只展示配置结构，不含个体数据：
 
@@ -65,8 +65,8 @@ Windows 64 位 PLINK 2（`tools/PLINK/plink2.exe`，v2.0.0-a.7.1）与 HIBLUP（
 task_id: local_pblup
 command: validate
 inputs:
-  phenotype: workspace/input/raw/phenotype.xlsx
-  pedigree: workspace/input/raw/pedigree.xlsx
+  phenotype: D:/data/my_strain/phenotype.xlsx
+  pedigree: D:/data/my_strain/pedigree.xlsx
 traits: [EN]
 model: pblup
 fixed_effects: [Gen, Batch]
