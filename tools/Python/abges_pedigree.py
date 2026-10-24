@@ -980,7 +980,9 @@ def build_engine_pedigree(qc_result, output_path, missing_token="NA",
     """
     生成 HIBLUP 系谱输入文件：三列 ID/Sire/Dam，未知亲本写 0。
 
-    HIBLUP 系谱输入中，未知亲本统一使用 engine_missing 表示。
+    2026-08-24 实测修订（hiblup v1.6.0，D:\\WorlBuddy\\temp\\hiblup_format_probe）：
+    未知亲本写 0 与写 NA 结果逐位一致（h² 完全相同），此前"NA 会被当作
+    有效字符串个体号"的注释与实测不符，予以更正。两种写法均合法，
     维持写 0 的既有口径以保证全量任务输出可追溯。
     """
     frame = qc_result.frame[["ID", "Sire", "Dam"]].copy()

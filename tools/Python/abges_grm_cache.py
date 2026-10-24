@@ -255,8 +255,10 @@ def get_or_build_grm(strain_id, genotype_prefix, cache_dir, matrix_type="GA",
         raise hiblup_tool.AbgesError(
             "E014",
             "Z 染色体剂量补偿已于 2026-10-13 移除，G 矩阵直接由 HIBLUP 构建；"
-            "请将 correct_z_chromosome 置为 False。该功能当前已停用；"
-            "关系矩阵由 HIBLUP 基于通过质控的基因型数据构建。")
+            "请将 correct_z_chromosome 置为 False。依据：HIBLUP 内部按位点实际均值"
+            "重新中心化，交付前改写 .bed 会被完全抵消（实测 base 与 caseA 的 "
+            "G 矩阵、h²、EBV 逐位相同）。详见 "
+            "docs/Z染色体剂量补偿_AB方案实测对比_v1.0.md")
 
     identifier(strain_id)
     os.makedirs(cache_dir, exist_ok=True)

@@ -67,6 +67,8 @@ logger = logging.getLogger(__name__)
 
 import numpy as np
 
+import abges_core as core
+
 # ===============================================================
 # 常量：HIBLUP .bin 格式
 # ===============================================================
@@ -385,7 +387,8 @@ def write_hiblup_grm_bin(grm_matrix: np.ndarray, output_prefix: str) -> str:
     HIBLUP --xrm 读取格式：逐行从列 0 到列 i 依次写入 G[i,0..i]。
     """
     n = grm_matrix.shape[0]
-    bin_path = output_prefix + ".bin"
+    bin_path = core.guard_output_path(output_prefix + ".bin",
+                                      label="HIBLUP GRM .bin 输出路径")
     with open(bin_path, "wb") as fh:
         for i in range(n):
             # 下三角：列 0 到 i（含对角线）
@@ -401,7 +404,8 @@ def write_hiblup_grm_id(sample_ids: List[str], output_prefix: str) -> str:
     HIBLUP --xrm 要求 .id 文件与 .bin 行数一致，
     FID 用样本 ID 填充（无家系时 FID=IID），father 填 0。
     """
-    id_path = output_prefix + ".id"
+    id_path = core.guard_output_path(output_prefix + ".id",
+                                     label="HIBLUP GRM .id 输出路径")
     with open(id_path, "w", encoding="utf-8") as fh:
         fh.write("FID IID FATHER\n")
         for sid in sample_ids:

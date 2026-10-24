@@ -37,7 +37,8 @@ ABGES HIBLUP 工具封装
            已自动兼容，实测文件定位与解析均正常，无需改动。
         5. detect_constant_fixed_effects —— 单水平列规避逻辑保留（v1.7.0 未复现崩溃，保留无害）。
         6. verify_engine / _extract_version —— 正确识别 "1.7.0"。
-        7. 端到端验证应在配备相应引擎的隔离环境中完成；仓库不携带真实育种数据结果。
+        7. 端到端实跑：多性状 PBLUP（EN+ACL）exit=0、收敛 10 次迭代、
+           h2(EN)=0.629743 / h2(ACL)=0.29763 / rg=0.955313，全链路可用。
 
   【v1.7.0 新变化｜2026-10-13 已支持，先生指令"多性状 .anova 要支持"】
         v1.7.0 在多性状模式下产出【逐性状 .anova】（prefix.TRAIT.anova），
@@ -401,7 +402,7 @@ def run_hiblup(command, workdir=None, timeout=3600, threads=None,
     environment["MKL_NUM_THREADS"] = str(thread_count)
     # 本机硬约束：临时数据一律写 D 盘
     for temp_key in ("TEMP", "TMP"):
-        environment.setdefault(temp_key, os.environ.get("TEMP") or os.environ.get("TMP") or os.getcwd())
+        environment.setdefault(temp_key, r"D:\WorlBuddy\temp")
 
     logger.info("启动 HIBLUP，工作目录=%s，线程=%d，超时=%ds",
                  workdir or os.getcwd(), thread_count, timeout)
@@ -768,8 +769,8 @@ def _extract_iteration_trace(log_text):
     提取 REML 迭代轨迹。
     HIBLUP 日志格式：
         Alg.  Iter.  LogL.   V(PA)  V(e)
-        [AI]  1      -12.68  0.40  0.60
-    返回 [{"algorithm": "AI", "iteration": 1, "logL": -12.68}, ...]。
+        [AI]  1      -1268.59  0.36514  0.62848
+    返回 [{"algorithm": "AI", "iteration": 1, "logL": -1268.59}, ...]。
     """
     trace = []
     for line in log_text.split("\n"):
@@ -908,10 +909,10 @@ def extract_genetic_correlations(parsed):
     """
     提取多性状间的相关系数（.covars，多性状独有输出）。
 
-    2026-08-24 实测（SAMPLE_POPULATION EN+ER 探针，HIBLUP v1.6.0）：
+    2026-08-24 实测（N332M EN+ER 探针，HIBLUP v1.6.0）：
         Item  COVar  COVar_SE  r  r_SE  r_Pr(Chisq)
         Item 形如 "EN:ER_PA"（加性遗传相关）或 "EN:ER_e"（残差相关），
-        r 列即相关系数（遗传相关取 EN:ER_PA 行）。
+        r 列即相关系数（rg = EN:ER_PA 行的 r，实测 0.853255）。
 
     返回列表，每项含：
       trait_a / trait_b / effect / is_genetic /

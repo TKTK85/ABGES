@@ -404,8 +404,8 @@ def compare_with_baseline(summary, baseline, tolerance=1e-4):
     与既有回归基线比对，用于验证新架构与已跑通结果一致。
 
     baseline 形如：
-      {"heritability": 0.42, "heritability_se": 0.03,
-       "genetic_variance": 0.42, "residual_variance": 0.58}
+      {"heritability": 0.366531, "heritability_se": 0.0406203,
+       "genetic_variance": 0.367703, "residual_variance": 0.635494}
     返回 (是否全部一致, 明细列表)。
     """
     details = []
@@ -552,7 +552,7 @@ def _display_source(source):
 
     【2026-10-20】必要性（先生要求「输出固定」+「展示中排除 _runs」）：
     真实来源为绝对路径，形如
-        …\\workspace\\SAMPLE_POPULATION_EN_PBLUP_GenBatch\\_runs\\run_001_20261020_223148_…\\output\\EN_20261020_223151.rand
+        …\\workspace\\PE312_EN_PBLUP_GenBatch\\_runs\\run_001_20261020_223148_…\\output\\EN_20261020_223151.rand
     该串既含内部 `_runs` 目录，又含每次变化的 run 编号与运行时间戳，
     直接写进报告会导致「每次运行的报告内容都不一样」，也让 _runs 出现在展示中。
     故统一规约为稳定的产物名（如 EN.rand），使每次运行展示一致。

@@ -11,31 +11,20 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# HIBLUP is provisioned separately; PLINK is bundled and verified at runtime.
-tools/HIBLUP/*
-!tools/HIBLUP/.gitkeep
-!tools/HIBLUP/README.txt
-!tools/HIBLUP/hiblup_tool.py
-tools/PLINK/*
-!tools/PLINK/.gitkeep
-!tools/PLINK/LICENSE
-!tools/PLINK/plink_tool.py
-!tools/PLINK/plink2.exe
-!tools/PLINK/README.md
+# Computation engines (HIBLUP, PLINK) are bundled and distributed with the
+# repository. The Harness verifies their SHA-256 checksums at runtime against
+# tools/ENGINE_MANIFEST.json. Only runtime logs and bytecode caches stay local
+# (covered by *.log and __pycache__/ rules above).
 
 .venv/
 configs/mcp-access.json
+configs/mcp-access*.json
 workspace/control_plane/
 workspace/mcp_tasks/
-# Local evaluation data and generated release artifacts (never publish by default)
-.coverage
-.coverage.*
-releases/
-*.vars
-*.rand
-**/input/raw/
-configs/mcp-access*.json
+
+# Breeding datasets, engine results, and private release artifacts
 data/
+**/input/raw/
 *.xlsx
 *.xls
 *.xlsm
@@ -48,3 +37,8 @@ data/
 *.map
 *.vcf
 *.vcf.gz
+*.vars
+*.rand
+.coverage
+.coverage.*
+releases/

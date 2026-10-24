@@ -29,4 +29,5 @@ PLINK 主程序依 GPL-3.0-or-later 分发，完整许可证见 [LICENSE](LICENS
 ## 使用范围
 
 本目录不附带育种数据。真实 ABGES 分析通过 Harness 和 PLINK 适配器调用本程序。
-HIBLUP 仍须另行按其许可配置；随包 PLINK 不表示整个分析环境已部署完成。
+HIBLUP 引擎同样随包分发（见 [../HIBLUP/README.md](../HIBLUP/README.md)）；
+随包引擎不表示整个分析环境已部署完成，仍需通过 Harness 校验和调用。

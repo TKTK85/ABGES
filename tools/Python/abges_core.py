@@ -25,7 +25,7 @@ from abges_runtime.storage import atomic_json
 # ---------------------------------------------------------------
 # 本机运行环境约束：所有临时数据写 D 盘，不回退 C 盘
 # ---------------------------------------------------------------
-PREFERRED_TEMP_DIR = os.environ.get("TEMP") or os.environ.get("TMP") or os.getcwd()
+PREFERRED_TEMP_DIR = r"D:\WorlBuddy\temp"
 FALLBACK_TEMP_DIR_NAME = ".workbuddy_temp"
 
 ABGES_VERSION = "1.0.0"
@@ -66,7 +66,7 @@ def resolve_project_path(*relative_parts):
 def resolve_temp_dir():
     """
     解析可写临时目录。
-    优先系统临时目录；不可用时退回项目内 .workbuddy_temp，
+    优先 D:\\WorlBuddy\\temp；不可用时退回项目内 .workbuddy_temp，
     绝不因缺少 D 盘而中断任务。
     """
     for candidate in (PREFERRED_TEMP_DIR,
@@ -549,6 +549,24 @@ def is_relative_inside(path, ancestor):
     if path_rel == os.curdir:
         return False
     return not path_rel.startswith(os.pardir + os.sep) and path_rel != os.pardir
+
+
+def guard_output_path(path, allowed_root=None, label="输出路径"):
+    """
+    写入前路径守卫（防路径穿越）。
+
+    将 path 绝对化，要求归一化后不含 ".." 分量；给定 allowed_root 时
+    进一步用 realpath 解析符号链接/junction 后按 is_relative_inside
+    校验路径整体位于该根之内。返回绝对化路径；越界抛 ValueError。
+    """
+    absolute = os.path.abspath(os.fspath(path))
+    if ".." in os.path.normpath(absolute).split(os.sep):
+        raise ValueError("%s包含路径穿越分量：%s" % (label, path))
+    if allowed_root is not None:
+        real = os.path.realpath(absolute)
+        if not is_relative_inside(real, allowed_root):
+            raise ValueError("%s越出允许根目录 %s：%s" % (label, allowed_root, absolute))
+    return absolute
 
 
 def is_deliverable_path(path, root=None):

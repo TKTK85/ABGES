@@ -1166,3 +1166,4 @@ def _ph010_check(df, fixed_cols, rules, result):
         })
         result.log_change("PH010", "WARNING", len(issues),
                           "分类编码不一致", {"issues": len(issues)})
+
