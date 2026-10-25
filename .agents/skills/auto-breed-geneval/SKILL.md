@@ -3,7 +3,7 @@ name: auto-breed-geneval
 description: "Use for ABGES poultry breeding genetic evaluation: phenotype, pedigree, or genotype QC; ACL/MCL/CEN/FCR derived traits; PBLUP, GBLUP, or SSGBLUP planning and HIBLUP execution; EBV, heritability, or variance-component validation and reporting. Invoke explicitly for real analyses, input audits, dry runs, result validation, or ABGES workflow troubleshooting."
 ---
 
-# ABGES genetic evaluation
+# Automated-Breeding-Genetic-Evaluation-Skill (ABGES)
 
 This is the Codex discovery adapter for the platform-neutral ABGES protocol. First read `../../../AGENTS.md` and `../../../docs/CONTEXT_PROTOCOL.md`. Treat the Harness as the authoritative execution path; do not reproduce genetic-evaluation logic in prompts or ad-hoc scripts.
 
