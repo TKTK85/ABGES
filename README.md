@@ -1,8 +1,12 @@
-# ABGES · 自动化育种遗传评估系统
+# ABGES · Automated-Breeding-Genetic-Evaluation-Skill
 
-ABGES V1.0 将表型、系谱和基因型质控、模型规划、遗传评估、结果验证和报告生成组织为一套可配置、可追溯的流程。项目通过 Harness 统一入口调用阶段执行器，由 HIBLUP 完成遗传评估，PLINK 2 用于基因型处理。
+**ABGES** 是 **Automated-Breeding-Genetic-Evaluation-Skill** 的缩写，中文名为**自动化育种遗传评估技能**。它面向育种专家和育种数据分析师，依托 Harness 将表型、系谱和基因型数据质控、模型规划、遗传评估、结果核验及报告交付组织成可配置、可追溯的工作流；由 HIBLUP 完成遗传评估，PLINK 2 用于基因型处理。
+
+当前仓库应用版本为 **V1.0（1.0.0）**。ABGES 用于支持遗传评估流程执行和结果核验；输出仍须结合性状定义、候选群、模型假设和育种目标由专业人员审阅。报告或软件测试通过不构成 EBV 准确性证明，也不自动形成选种决策。
 
 仓库包含源代码、通用配置、任务模板、测试和文档，**不提供真实育种数据、历史评估结果或凭据**。计算引擎已随包分发：Windows 64 位 PLINK 2 和 HIBLUP 的版本、许可证与对应源码说明见 [PLINK 分发说明](tools/PLINK/README.md) 与 [HIBLUP 分发说明](tools/HIBLUP/README.md)；使用者只需在本机准备自己的育种数据。配置和测试通过不能替代真实数据上的收敛检查及结果验证。
+
+**许可说明：**当前仓库没有声明适用于 ABGES 自有代码的顶层开源许可证，因此克隆代码不代表获得再分发或商用授权。随包 PLINK 2 和 HIBLUP 各自适用其上游许可；使用或分发前请分别阅读上面的引擎说明。
 
 ## 功能与适用范围
 
@@ -152,10 +156,12 @@ tests/            自动化测试
 
 这些检查验证软件行为，不证明某一真实数据集上的育种值准确性。真实数据不应提交到 GitHub；`.gitignore` 只提供辅助排除，提交前仍需检查暂存文件及历史。
 
+首次贡献前请阅读[贡献指南](CONTRIBUTING.md)和[项目协作协议](AGENTS.md)。发布流程要求记录源码提交、任务与输入校验信息、引擎清单、运行 ID 和真实评估证据，详见[发布说明](docs/RELEASE.md)。
+
 - [项目协作协议](AGENTS.md) · [上下文与检查点](docs/CONTEXT_PROTOCOL.md)
 - [总体架构](docs/ARCHITECTURE.md) · [阶段职责](docs/AGENTS.md)
 - [Harness](docs/HARNESS.md) · [模型规则](docs/MODEL_RULES.md)
 - [任务契约](schemas/task-schema.yaml) · [输出契约](configs/delivery/output-contract.yaml)
 - [环境说明](docs/ENVIRONMENT.md) · [MCP 适配](docs/MCP_GATEWAY.md)
 
-文档若与实现存在差异，以当前入口参数、执行代码和配置契约的实际行为为核对依据。当前仓库未声明顶层开源许可证；第三方引擎须遵循各自许可。
+文档若与实现存在差异，以当前入口参数、执行代码和配置契约的实际行为为核对依据。
